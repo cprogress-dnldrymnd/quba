@@ -1127,7 +1127,7 @@ class Quba_Controllers
 
             if ($query->max_num_pages > $paged) {
                 echo '<div class="load-more-container w-100 text-center mt-5" id="quba-load-more-container" style="flex: 0 0 100%;">';
-                echo '<button class="quba-load-more button-box-v2 button-accent" style="border:none; padding:15px 30px; cursor:pointer; background-color:var(--quba-accent); color:#fff; border-radius:5px;" data-page="' . ($paged + 1) . '">Load More</button>';
+                echo '<button class="quba-load-more button-box-v2 button-accent" style="border:none; padding:15px 30px; cursor:pointer; background-color:var(--sun-orange); color:#fff; border-radius:5px;" data-page="' . ($paged + 1) . '">Load More</button>';
                 echo '</div>';
             }
 
