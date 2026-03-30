@@ -727,23 +727,29 @@ class Quba_Controllers
     }
 
     /**
-     * Hooks into template_include to load templates from the plugin directly.
-     * Overrides theme and WooCommerce templates for these custom post types.
-     * * @param string $template Standard detected template.
-     * @return string Modified template directory path.
+     * Intercepts standard WordPress template resolution and overrides it 
+     * with custom plugin templates for specific custom post types.
+     * * @param string $template The absolute path to the template WordPress intends to load.
+     * @return string The modified absolute path pointing to the plugin's template directory.
      */
     public static function route_templates($template)
     {
-        // Hook Qualifications / Units archives
+        // Route Archive endpoints for both post types
         if (is_post_type_archive('qualifications') || is_post_type_archive('units') || is_tax('qualifications_cat')) {
             $plugin_archive = plugin_dir_path(__FILE__) . 'templates/archive-qualifications.php';
             if (file_exists($plugin_archive)) return $plugin_archive;
         }
 
-        // Hook Qualifications / Units single endpoints
-        if (is_singular('qualifications') || is_singular('units')) {
+        // Route Single endpoint for Qualifications
+        if (is_singular('qualifications')) {
             $plugin_single = plugin_dir_path(__FILE__) . 'templates/single-qualifications.php';
             if (file_exists($plugin_single)) return $plugin_single;
+        }
+
+        // Route Single endpoint strictly for Units
+        if (is_singular('units')) {
+            $plugin_single_unit = plugin_dir_path(__FILE__) . 'templates/single-units.php';
+            if (file_exists($plugin_single_unit)) return $plugin_single_unit;
         }
 
         return $template;
