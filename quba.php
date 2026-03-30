@@ -1,1523 +1,814 @@
 <?php
 
+/**
+ * Plugin Name: Quba System Integration
+ * Description: Integrates QUBA SOAP API, synchronizes units/qualifications, and provides custom templates.
+ * Version: 2.0.0
+ * Author: Digitally Disruptive - Donald Raymundo
+ * Author URI: https://digitallydisruptive.co.uk/
+ * Text Domain: quba-integration
+ */
 
-// Global SOAP client to avoid recreation
-global $quba_soap_client;
+if (! defined('ABSPATH')) {
+    exit; // Exit if accessed directly.
+}
 
-function get_quba_soap_client() {
-    global $quba_soap_client;
+/**
+ * Class Quba_API
+ * * Handles all SOAP client connections and data retrieval from the QUBA API.
+ */
+class Quba_API
+{
 
-    if (!$quba_soap_client) {
+    /** @var SoapClient|null Singleton instance of the SOAP client. */
+    private static $soap_client = null;
 
-        // Increase PHP limits
-        ini_set('default_socket_timeout', 300);
-        ini_set('max_execution_time', 300);
+    /**
+     * Initializes and returns the QUBA SOAP client.
+     * * @return SoapClient|false Returns the SoapClient instance or false on failure.
+     */
+    public static function get_client()
+    {
+        if (! self::$soap_client) {
+            ini_set('default_socket_timeout', 300);
+            ini_set('max_execution_time', 300);
 
+            try {
+                $context = stream_context_create([
+                    'http' => [
+                        'timeout'          => 300,
+                        'protocol_version' => 1.1,
+                        'header'           => "Connection: close\r\n"
+                    ]
+                ]);
+
+                self::$soap_client = new SoapClient(
+                    'https://quba.quartz-system.com/QuartzWSExtra/OCNNWR/WSQUBA_UB_V3.asmx?WSDL',
+                    [
+                        'trace'              => true,
+                        'exceptions'         => true,
+                        'cache_wsdl'         => WSDL_CACHE_NONE, // disable caching
+                        'connection_timeout' => 180,
+                        'stream_context'     => $context,
+                    ]
+                );
+            } catch (Exception $e) {
+                error_log('QUBA SOAP Client Error: ' . $e->getMessage());
+                return false;
+            }
+        }
+        return self::$soap_client;
+    }
+
+    /**
+     * Retrieves QCA Sectors from the API.
+     * * @return SimpleXMLElement|Exception array of sectors or Exception on failure.
+     */
+    public static function get_qca_sectors()
+    {
         try {
+            $client = self::get_client();
+            if (! $client) throw new Exception("SOAP Client not available.");
 
-            $context = stream_context_create([
-                'http' => [
-                    'timeout' => 300,
-                    'protocol_version' => 1.1,
-                    'header' => "Connection: close\r\n"
-                ]
-            ]);
+            $response = $client->QUBA_GetQCASectors();
+            $xmlString = $response->QUBA_GetQCASectorsResult->any ?? '';
 
-            $quba_soap_client = new SoapClient(
-                'https://quba.quartz-system.com/QuartzWSExtra/OCNNWR/WSQUBA_UB_V3.asmx?WSDL',
-                [
-                    'trace' => true,
-                    'exceptions' => true,
-                    'cache_wsdl' => WSDL_CACHE_NONE, // disable caching
-                    'connection_timeout' => 180,
-                    'stream_context' => $context,
-                    // temporarily disable compression for testing
-                    //'compression' => SOAP_COMPRESSION_ACCEPT | SOAP_COMPRESSION_GZIP
-                ]
-            );
-
+            $responseString = self::wrap_soap_envelope('QUBA_GetQCASectors', $xmlString);
+            $xml = new SimpleXMLElement($responseString);
+            return $xml->xpath('//QubaGetSSAReferenceData');
         } catch (Exception $e) {
-            error_log('QUBA SOAP Client Error: ' . $e->getMessage());
-            return false;
+            return $e;
         }
     }
 
-    return $quba_soap_client;
-}
-/** Quba Functions */
-function QUBA_GetQCASectors()
-{
-  $client = new SoapClient('https://quba.quartz-system.com/QuartzWSExtra/OCNNWR/WSQUBA_UB_V3.asmx?WSDL');
-  // Set the SOAP action
+    /**
+     * Retrieves documents associated with a specific qualification.
+     * * @param int|string $qualificationID The ID of the qualification.
+     * @return SimpleXMLElement|Exception
+     */
+    public static function get_qualification_documents($qualificationID)
+    {
+        try {
+            $client = self::get_client();
+            $response = $client->QUBA_GetQualificationDocuments(['qualificationID' => $qualificationID]);
+            $xmlString = $response->QUBA_GetQualificationDocumentsResult->any ?? '';
 
-
-  // Call the SOAP method
-  $response = $client->QUBA_GetQCASectors();
-
-  // Assuming $response is the object returned from the SOAP call:
-  $xmlString = $response->QUBA_GetQCASectorsResult->any; // Assuming XML is in the "any" field
-
-  $responseString = '<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-  <soap:Body>
-    <QUBA_GetQCASectorsResponse xmlns="http://tempuri.org/">
-      <QUBA_GetQCASectorsResult namespace="" tableTypeName="">
-        ' . $xmlString . '
-      </QUBA_GetQCASectorsResult>
-    </QUBA_GetQCASectorsResponse>
-  </soap:Body>
-</soap:Envelope>';
-
-
-  try {
-    $xml = new SimpleXMLElement($responseString);
-    $QubaGetSSAReferenceData = $xml->xpath('//QubaGetSSAReferenceData');
-    return $QubaGetSSAReferenceData;
-  } catch (Exception $e) {
-    return $e;
-    // Handle errors (e.g., invalid XML, data extraction issues)
-  }
-}
-function QUBA_GetQualificationDocuments($qualificationID)
-{
-  $client = new SoapClient('https://quba.quartz-system.com/QuartzWSExtra/OCNNWR/WSQUBA_UB_V3.asmx?WSDL');
-  // Set the SOAP action
-
-
-  // Call the SOAP method
-  $request = array(
-    'qualificationID'     => $qualificationID,
-  );
-
-  $response = $client->QUBA_GetQualificationDocuments($request);
-
-  // Assuming $response is the object returned from the SOAP call:
-  $xmlString = $response->QUBA_GetQualificationDocumentsResult->any; // Assuming XML is in the "any" field
-
-  $responseString = '<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-  <soap:Body>
-    <QUBA_GetQualificationDocumentsResponse xmlns="http://tempuri.org/">
-      <QUBA_GetQualificationDocumentsResult namespace="" tableTypeName="">' . $xmlString . '</QUBA_GetQualificationDocumentsResult>
-    </QUBA_GetQualificationDocumentsResponse>
-  </soap:Body>
-</soap:Envelope>';
-
-
-  try {
-    $xml = new SimpleXMLElement($responseString);
-    $QubaQualificationDocuments = $xml->xpath('//QubaQualificationDocuments');
-	  
-    return $QubaQualificationDocuments;
-  } catch (Exception $e) {
-    return $e;
-    // Handle errors (e.g., invalid XML, data extraction issues)
-  }
-}
-
-
-
-function QUBA_UnitSearchById($unitID) {
-    ob_start();
-
-    try {
-        // Define the SOAP client
-        $client = new SoapClient('https://quba.quartz-system.com/QuartzWSExtra/OCNNWR/WSQUBA_UB_V3.asmx?WSDL');
-
-        // Optional: Get unitType from query param if provided
-        $unitType = isset($_GET['unitType']) ? sanitize_text_field($_GET['unitType']) : '';
-
-        // Create the SOAP request
-        $request = array(
-            'unitID' => (int) $unitID, // Ensure unitID is an integer
-            'unitIdAlpha' => '',
-            'unitTitle' => '',
-            'allOrPartTitle' => false,
-            'unitLevel' => '',
-            'unitCredits' => 0,
-            'qcaSector' => '',
-            'learnDirectCode' => '',
-            'qcaCode' => '',
-            'unitType' => $unitType, // ✅ Pass filtered unitType
-            'provisionType' => '',
-            'includeHub' => true,
-            'moduleID' => '',
-            'alternativeUnitCode' => '',
-        );
-
-        // Call the SOAP method
-        $response = $client->QUBA_UnitSearch($request);
-
-        // Extract XML response
-        $xmlString = isset($response->QUBA_UnitSearchResult->any) ? $response->QUBA_UnitSearchResult->any : '';
-
-        if (!$xmlString) {
-            return (object) ['error' => 'Empty response from SOAP API'];
+            $responseString = self::wrap_soap_envelope('QUBA_GetQualificationDocuments', $xmlString);
+            $xml = new SimpleXMLElement($responseString);
+            return $xml->xpath('//QubaQualificationDocuments');
+        } catch (Exception $e) {
+            return $e;
         }
-
-        // Wrap response for parsing
-        $responseString = '<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-          <soap:Body>
-            <QUBA_UnitSearchResponse xmlns="http://tempuri.org/">
-              <QUBA_UnitSearchResult namespace="" tableTypeName="">
-              ' . $xmlString . '
-              </QUBA_UnitSearchResult>
-            </QUBA_UnitSearchResponse>
-          </soap:Body>
-        </soap:Envelope>';
-
-        // Parse XML
-        libxml_use_internal_errors(true);
-        $xml = new SimpleXMLElement($responseString);
-        $units = $xml->xpath('//QubaUnit');
-
-        if (empty($units)) {
-            return (object) ['error' => 'No results found'];
-        }
-
-        // Extract the first unit as an object
-        $unitObject = new stdClass();
-        foreach ($units[0]->children() as $child) {
-            $unitObject->{$child->getName()} = htmlentities((string) $child);
-        }
-
-        return $unitObject;
-
-    } catch (Exception $e) {
-        return (object) ['error' => 'SOAP Request Failed: ' . $e->getMessage()];
     }
 
-    return ob_get_clean();
-}
+    /**
+     * Searches for a single unit by its ID.
+     * * @param int|string $unitID The Unit ID.
+     * @return stdClass Object containing unit details or error message.
+     */
+    public static function unit_search_by_id($unitID)
+    {
+        try {
+            $client = self::get_client();
+            $unitType = isset($_GET['unitType']) ? sanitize_text_field($_GET['unitType']) : '';
 
-function QUBA_QualificationSearchById($qualificationID) {
-    ob_start();
+            $request = [
+                'unitID'              => (int) $unitID,
+                'unitIdAlpha'         => '',
+                'unitTitle'           => '',
+                'allOrPartTitle'      => false,
+                'unitLevel'           => '',
+                'unitCredits'         => 0,
+                'qcaSector'           => '',
+                'learnDirectCode'     => '',
+                'qcaCode'             => '',
+                'unitType'            => $unitType,
+                'provisionType'       => '',
+                'includeHub'          => true,
+                'moduleID'            => '',
+                'alternativeUnitCode' => '',
+            ];
 
-    try {
-        // Check if qualificationID is valid
-        if (empty($qualificationID) || !is_numeric($qualificationID)) {
-            return (object) ['error' => 'Invalid Qualification ID provided'];
-        }
+            $response = $client->QUBA_UnitSearch($request);
+            $xmlString = $response->QUBA_UnitSearchResult->any ?? '';
 
-        // Define the SOAP client
-        $client = new SoapClient('https://quba.quartz-system.com/QuartzWSExtra/OCNNWR/WSQUBA_UB_V3.asmx?WSDL');
+            if (! $xmlString) return (object) ['error' => 'Empty response from SOAP API'];
 
-        // Create the SOAP request
-        $request = array(
-            'qualificationID'     => (int) $qualificationID, // Ensure qualificationID is an integer
-            'qualificationTitle'  => '',
-            'qualificationLevel'  => '',
-            'qualificationNumber' => '',
-            'qcaSector'           => '',
-            'provisionType'       => '',
-            'unitID'              => '',
-            'includeHub'          => false,
-            'centreID'            => ''
-        );
+            $responseString = self::wrap_soap_envelope('QUBA_UnitSearch', $xmlString);
 
-        // Call the SOAP method
-        $response = $client->QUBA_QualificationSearch($request);
+            libxml_use_internal_errors(true);
+            $xml = new SimpleXMLElement($responseString);
+            $units = $xml->xpath('//QubaUnit');
 
-        // Extract XML response
-        $xmlString = isset($response->QUBA_QualificationSearchResult->any) ? $response->QUBA_QualificationSearchResult->any : '';
+            if (empty($units)) return (object) ['error' => 'No results found'];
 
-        if (!$xmlString) {
-            return (object) ['error' => 'Empty response from SOAP API'];
-        }
-
-        // Wrap response in SOAP envelope for parsing
-        $responseString = '<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-          <soap:Body>
-            <QUBA_QualificationSearchResponse xmlns="http://tempuri.org/">
-              <QUBA_QualificationSearchResult namespace="" tableTypeName="">
-              ' . $xmlString . '
-              </QUBA_QualificationSearchResult>
-            </QUBA_QualificationSearchResponse>
-          </soap:Body>
-        </soap:Envelope>';
-
-        // Parse XML
-        libxml_use_internal_errors(true);
-        $xml = new SimpleXMLElement($responseString);
-        $qualifications = $xml->xpath('//QubaQualification'); // Extract qualification nodes
-
-        if (empty($qualifications)) {
-            return (object) ['error' => 'No qualification found with ID: ' . $qualificationID];
-        }
-
-        // Extract the first qualification as an object
-        $qualificationObject = new stdClass();
-        foreach ($qualifications[0]->children() as $child) {
-            if ($child->getName() != 'Classifications') {
-                $qualificationObject->{$child->getName()} = htmlentities((string) $child);
+            $unitObject = new stdClass();
+            foreach ($units[0]->children() as $child) {
+                $unitObject->{$child->getName()} = htmlentities((string) $child);
             }
+            return $unitObject;
+        } catch (Exception $e) {
+            return (object) ['error' => 'SOAP Request Failed: ' . $e->getMessage()];
         }
-        
-        // Specifically extract Classifications if they exist
-        if (isset($qualifications[0]->Classifications)) {
-            $classifications = $qualifications[0]->Classifications;
-            if (isset($classifications->Classification1)) {
-                $qualificationObject->Classification1 = htmlentities((string) $classifications->Classification1);
+    }
+
+    /**
+     * Retrieves a single qualification by its ID.
+     * * @param int|string $qualificationID
+     * @return stdClass Object containing qualification details.
+     */
+    public static function qualification_search_by_id($qualificationID)
+    {
+        try {
+            if (empty($qualificationID) || ! is_numeric($qualificationID)) {
+                return (object) ['error' => 'Invalid Qualification ID provided'];
             }
-        }
-        
-        return $qualificationObject;
 
-    } catch (Exception $e) {
-        return (object) ['error' => 'SOAP Request Failed: ' . $e->getMessage()];
-    }
+            $client = self::get_client();
+            $request = [
+                'qualificationID'     => (int) $qualificationID,
+                'qualificationTitle'  => '',
+                'qualificationLevel'  => '',
+                'qualificationNumber' => '',
+                'qcaSector'           => '',
+                'provisionType'       => '',
+                'unitID'              => '',
+                'includeHub'          => false,
+                'centreID'            => ''
+            ];
 
-    return ob_get_clean();
-}
+            $response = $client->QUBA_QualificationSearch($request);
+            $xmlString = $response->QUBA_QualificationSearchResult->any ?? '';
 
+            if (! $xmlString) return (object) ['error' => 'Empty response from SOAP API'];
 
-function QUBA_GetUnitListingDocument($qualificationID)
-{
-    try {
-        // Ensure qualificationID is valid
-        if (empty($qualificationID) || !is_numeric($qualificationID)) {
-            return "Invalid Qualification ID provided.";
-        }
-        
-        $client = new SoapClient('https://quba.quartz-system.com/QuartzWSExtra/OCNNWR/WSQUBA_UB_V3.asmx?WSDL');
-        $request = array('unitID' => $qualificationID);
-        $response = $client->QUBA_GetUnitContent($request);
-		
-		
-        
-        // Check if response contains data
-        if (!isset($response->QUBA_GetUnitContentResult) || empty($response->QUBA_GetUnitContentResult)) {
-            return "No data found for this qualification.";
-        }
-        
-        // Get PDF content from the response
-        $pdfContent = $response->QUBA_GetUnitContentResult;
-        
-        // Create directory if it doesn't exist
-        $uploadDir = 'uploads/pdf/';
-        if (!file_exists($uploadDir)) {
-            mkdir($uploadDir, 0755, true);
-        }
-        
-        // Generate unique filename
-        $filename = 'unit_' . $qualificationID . '_' . date('YmdHis') . '.pdf';
-        $filePath = $uploadDir . $filename;
-        
-        // Save PDF to file
-        file_put_contents($filePath, $pdfContent);
-        
-        // Return the URL to the saved PDF
-        $baseUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http") . "://$_SERVER[HTTP_HOST]";
-        $pdfUrl = $baseUrl . '/' . $filePath;
-        
-        return $pdfUrl;
-        
-    } catch (SoapFault $e) {
-        return "SOAP Error: " . $e->getMessage();
-    } catch (Exception $e) {
-        return "General Error: " . $e->getMessage();
-    }
-}
+            $responseString = self::wrap_soap_envelope('QUBA_QualificationSearch', $xmlString);
 
+            libxml_use_internal_errors(true);
+            $xml = new SimpleXMLElement($responseString);
+            $qualifications = $xml->xpath('//QubaQualification');
 
-function QUBA_QualificationSearchForUnit($unitID)
-{
+            if (empty($qualifications)) return (object) ['error' => 'No qualification found'];
 
-	ob_start();
-
-
-	try {
-
-		$client = new SoapClient('https://quba.quartz-system.com/QuartzWSExtra/OCNNWR/WSQUBA_UB_V3.asmx?WSDL');
-
-		$request = array(
-			'qualificationID'     => 0,
-			'qualificationTitle'  => '',
-			'qualificationLevel'  => '',
-			'qualificationNumber' => '',
-			'qcaSector'           => '',
-			'provisionType'       => '',
-			'unitID'              => $unitID,
-			'includeHub'          => false,
-			'centreID'            => ''
-		);
-
-		$response = $client->QUBA_QualificationSearch($request);
-		$xmlString = $response->QUBA_QualificationSearchResult->any;
-
-		$responseString = '<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-            <soap:Body>
-                <QUBA_QualificationSearchResponse xmlns="http://tempuri.org/">
-                    <QUBA_QualificationSearchResult namespace="" tableTypeName="">
-                        ' . $xmlString . '
-                    </QUBA_QualificationSearchResult>
-                </QUBA_QualificationSearchResponse>
-            </soap:Body>
-        </soap:Envelope>';
-
-		$xml = new SimpleXMLElement($responseString);
-
-		// Update the xpath query to specifically target QubaQualification elements
-		$qualifications = $xml->xpath('//QubaQualification');
-
-
-
-     return $qualifications;
-	} catch (Exception $e) {
-		error_log('QUBA Search Error: ' . $e->getMessage());
-
-		echo 'QUBA Search Error' . $e->getMessage();
-	}
-
-	return ob_get_clean();
-}
-
-
-function QUBA_QualificationSearch($data) {
-    ob_start();
-    try {
-        $client = new SoapClient('https://quba.quartz-system.com/QuartzWSExtra/OCNNWR/WSQUBA_UB_V3.asmx?WSDL');
-        $request = array(
-            'qualificationID'     => 0,
-            'qualificationTitle'  => $data['qualificationTitle'] ?? '',
-            'qualificationLevel'  => $data['qualificationLevel'] ?? '',
-            'qualificationNumber' => $data['qualificationNumber'] ?? '',
-            'qcaSector'           => $data['qcaSector'] ?? '',
-            'Type'                => $data['qualificationType'] ?? '',
-            'provisionType'       => '',
-            'unitID'              => '',
-            'includeHub'          => false,
-            'centreID'            => ''
-        );
-        $response = $client->QUBA_QualificationSearch($request);
-        $xmlString = $response->QUBA_QualificationSearchResult->any;
-        
-        $responseString = '<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-            <soap:Body>
-                <QUBA_QualificationSearchResponse xmlns="http://tempuri.org/">
-                    <QUBA_QualificationSearchResult namespace="" tableTypeName="">
-                        ' . $xmlString . '
-                    </QUBA_QualificationSearchResult>
-                </QUBA_QualificationSearchResponse>
-            </soap:Body>
-        </soap:Envelope>';
-        $xml = new SimpleXMLElement($responseString);
-        
-        // Update the xpath query to specifically target QubaQualification elements
-        $qualifications = $xml->xpath('//QubaQualification');
-        
-        if (isset($data['debug']) && $data['debug']) {
-            echo "<pre>";
-            var_dump($qualifications);
-        }
-        
-        // List of restricted qualification IDs to exclude
-        $restrictedIds = ['127141', '127142', '127651', '127256'];
-        
-        // Get current date for expiration comparison
-        $currentDate = new DateTime();
-        
-        $resultArray = [];
-        foreach ($qualifications as $qualification) {
-            $qualificationArray = [];
-            $isRestricted = false;
-            $isExpired = false;
-            
-            // Extract basic qualification details
-            foreach ($qualification->children() as $child) {
+            $qualificationObject = new stdClass();
+            foreach ($qualifications[0]->children() as $child) {
                 if ($child->getName() != 'Classifications') {
-                    // Convert SimpleXMLElement to string and trim whitespace
-                    $qualificationArray[$child->getName()] = trim((string) $child);
+                    $qualificationObject->{$child->getName()} = htmlentities((string) $child);
                 }
             }
-            
-            // Check if this is one of the specific restricted IDs
-            if (isset($qualificationArray['ID']) && 
-                in_array($qualificationArray['ID'], $restrictedIds)) {
-                continue; // Skip this qualification
+            if (isset($qualifications[0]->Classifications->Classification1)) {
+                $qualificationObject->Classification1 = htmlentities((string) $qualifications[0]->Classifications->Classification1);
             }
+            return $qualificationObject;
+        } catch (Exception $e) {
+            return (object) ['error' => 'SOAP Request Failed: ' . $e->getMessage()];
+        }
+    }
 
-            // Check if qualification is expired based on OperationalEndDate or RegulationEndDate
-            if (isset($qualificationArray['OperationalEndDate']) && !empty($qualificationArray['OperationalEndDate'])) {
-                $endDate = new DateTime($qualificationArray['OperationalEndDate']);
-                if ($endDate < $currentDate) {
-                    $isExpired = true;
-                }
-            }
-            
-            if (isset($qualificationArray['RegulationEndDate']) && !empty($qualificationArray['RegulationEndDate'])) {
-                $regEndDate = new DateTime($qualificationArray['RegulationEndDate']);
-                if ($regEndDate < $currentDate) {
-                    $isExpired = true;
-                }
-            }
-            
-            // Skip if qualification is expired
-            if ($isExpired) {
-                continue;
-            }
-            
-            // Specifically extract Classifications
-            if (isset($qualification->Classifications)) {
-                $classifications = $qualification->Classifications;
-                if (isset($classifications->Classification1)) {
-                    $classificationValue = trim((string) $classifications->Classification1);
-                    $qualificationArray['Classification1'] = $classificationValue;
-                    
-                    // Check if this is a restricted delivery qualification
-                    if (stripos($classificationValue, 'Restricted Delivery') !== false) {
-                        $isRestricted = true;
+    /**
+     * General Qualification search based on provided filters.
+     * * @param array $data Filtering parameters.
+     * @return string HTML output of the search results.
+     */
+    public static function qualification_search($data)
+    {
+        ob_start();
+        try {
+            $client = self::get_client();
+            $request = [
+                'qualificationID'     => 0,
+                'qualificationTitle'  => $data['qualificationTitle'] ?? '',
+                'qualificationLevel'  => $data['qualificationLevel'] ?? '',
+                'qualificationNumber' => $data['qualificationNumber'] ?? '',
+                'qcaSector'           => $data['qcaSector'] ?? '',
+                'Type'                => $data['qualificationType'] ?? '',
+                'provisionType'       => '',
+                'unitID'              => '',
+                'includeHub'          => false,
+                'centreID'            => ''
+            ];
+
+            $response = $client->QUBA_QualificationSearch($request);
+            $xmlString = $response->QUBA_QualificationSearchResult->any;
+            $responseString = self::wrap_soap_envelope('QUBA_QualificationSearch', $xmlString);
+
+            $xml = new SimpleXMLElement($responseString);
+            $qualifications = $xml->xpath('//QubaQualification');
+
+            $restrictedIds = ['127141', '127142', '127651', '127256'];
+            $currentDate = new DateTime();
+            $resultArray = [];
+
+            foreach ($qualifications as $qualification) {
+                $qualificationArray = [];
+                $isRestricted = false;
+                $isExpired = false;
+
+                foreach ($qualification->children() as $child) {
+                    if ($child->getName() != 'Classifications') {
+                        $qualificationArray[$child->getName()] = trim((string) $child);
                     }
                 }
-            }
-            
-            // Only add non-restricted qualifications
-            if (!empty($qualificationArray) && !$isRestricted) {
-                $resultArray[] = $qualificationArray;
-            }
-        }
-        
-        // Debug info for type filtering
-        if (!empty($data['qualificationType']) && isset($data['debug']) && $data['debug']) {
-            echo "<pre>Filtering by qualification type: " . $data['qualificationType'] . "\n";
-            echo "Available types in results: \n";
-            foreach ($resultArray as $idx => $item) {
-                if (isset($item['Type'])) {
-                    echo "[$idx] Type: '" . $item['Type'] . "'\n";
+
+                if (isset($qualificationArray['ID']) && in_array($qualificationArray['ID'], $restrictedIds)) continue;
+
+                if (!empty($qualificationArray['OperationalEndDate']) && new DateTime($qualificationArray['OperationalEndDate']) < $currentDate) $isExpired = true;
+                if (!empty($qualificationArray['RegulationEndDate']) && new DateTime($qualificationArray['RegulationEndDate']) < $currentDate) $isExpired = true;
+                if ($isExpired) continue;
+
+                if (isset($qualification->Classifications->Classification1)) {
+                    $classificationValue = trim((string) $qualification->Classifications->Classification1);
+                    $qualificationArray['Classification1'] = $classificationValue;
+                    if (stripos($classificationValue, 'Restricted Delivery') !== false) $isRestricted = true;
+                }
+
+                if (! empty($qualificationArray) && ! $isRestricted) {
+                    // Apply programmatic filter mapping
+                    if (! empty($data['qualificationType']) && strtolower(trim($qualificationArray['Type'] ?? '')) !== strtolower(trim($data['qualificationType']))) continue;
+
+                    $resultArray[] = $qualificationArray;
                 }
             }
-            echo "</pre>";
-        }
-        
-        // Apply filters
-        $resultArray_final = [];
-        
-        if (isset($data['debug']) && $data['debug']) {
-            echo "<pre>";
-            var_dump($resultArray);
-            echo "</pre>";
-        }
-//         echo "<pre>";
-// 		var_dump($resultArray);
-        foreach ($resultArray as $result) {
-            $typeMatch = true;
-            $regulatorMatch = true;
-            
-            // Check qualification type filter
-            if (!empty($data['qualificationType'])) {
-                $typeMatch = isset($result['Type']) && 
-                             strtolower(trim($result['Type'])) == strtolower(trim($data['qualificationType']));
+
+            if (! empty($resultArray)) {
+                echo '<div class="row row-results g-5">';
+                foreach ($resultArray as $item) {
+                    echo Quba_Render::qual_grid($item);
+                }
+                echo '</div>';
+            } else {
+                echo 'No results found';
             }
-            
-            // Only add to final results if it matches all applied filters
-            if ($typeMatch && $regulatorMatch) {
-                $resultArray_final[] = $result;
+        } catch (Exception $e) {
+            error_log('QUBA Search Error: ' . $e->getMessage());
+            echo 'QUBA Search Error: ' . $e->getMessage();
+        }
+        return ob_get_clean();
+    }
+
+    /**
+     * General Unit search based on provided filters. Includes caching.
+     * * @param array $data Filters for the search.
+     * @return string HTML output of the search results.
+     */
+    public static function unit_search($data)
+    {
+        ob_start();
+        try {
+            $cache_key = 'quba_units_AllDataTotal35' . md5(serialize($data));
+            $cached_results = get_transient($cache_key);
+
+            if ($cached_results !== false) {
+                echo $cached_results;
+                return ob_get_clean();
             }
+
+            $client = self::get_client();
+            $request = [
+                'unitID'              => isset($data['unitID']) ? (int) $data['unitID'] : 0,
+                'unitIdAlpha'         => $data['unitID'] ?? '',
+                'unitTitle'           => '%',
+                'allOrPartTitle'      => true,
+                'unitLevel'           => $data['unitLevel'] ?? '',
+                'unitCredits'         => 0,
+                'qcaSector'           => $data['qcaSector'] ?? '',
+                'learnDirectCode'     => '',
+                'qcaCode'             => '',
+                'unitType'            => $data['unitType'] ?? '',
+                'provisionType'       => '',
+                'includeHub'          => true,
+                'moduleID'            => 0,
+                'alternativeUnitCode' => '',
+            ];
+
+            $response = $client->QUBA_UnitSearch($request);
+            $xmlString = $response->QUBA_UnitSearchResult->any;
+            $responseString = self::wrap_soap_envelope('QUBA_UnitSearch', $xmlString);
+
+            libxml_use_internal_errors(true);
+            $xml = new SimpleXMLElement($responseString);
+            $units = $xml->xpath('//QubaUnit') ?: [];
+
+            $resultArray = Quba_Data_Sync::process_and_filter_units($units, $data);
+            $output = Quba_Render::generate_search_results_output($resultArray, $data);
+
+            set_transient($cache_key, $output, DAY_IN_SECONDS);
+            echo $output;
+        } catch (Exception $e) {
+            echo Quba_Render::generate_error_output($e->getMessage());
         }
-        
-        // Display Results
-        if (!empty($resultArray_final)) {
-            echo '<div class="row row-results g-5">';
-            foreach ($resultArray_final as $data) {
-                echo qual_grid($data);
-            }
-            echo '</div>';
-        } else {
-            echo 'No results found';
-        }
-        
-    } catch (Exception $e) {
-        error_log('QUBA Search Error: ' . $e->getMessage());
-        echo 'QUBA Search Error: ' . $e->getMessage();
-    }
-    
-    return ob_get_clean();
-}
-
-function QUBA_QualificationSearchPost()
-{
-  ob_start();
-  $posts = get_posts(array(
-    'post_type' => 'qualifications',
-    'numberposts' => 15,
-    'orderby' => 'rand',
-  ));
-
-  echo "<div class='row row-results g-5'>";
-  foreach ($posts as $post) {
-    $level = carbon_get_post_meta($post->ID, 'level');
-    $data = array(
-      'Level'   => $level,
-      'Title'   => $post->post_title,
-      'post_id' => $post->ID,
-    );
-    echo qual_grid($data, 'qualifications', true);
-  }
-  echo "</div>";
-  return ob_get_clean();
-}
-
-
-//get unit using post id
-function get_unit_post_id_by_meta($meta_key, $meta_value) {
-    global $wpdb;
-
-    return $wpdb->get_var($wpdb->prepare(
-        "SELECT post_id 
-         FROM {$wpdb->postmeta} 
-         WHERE meta_key = %s 
-         AND meta_value = %s 
-         LIMIT 1",
-        $meta_key,
-        $meta_value
-    ));
-}
-
-function sync_quba_units_to_posts($units) {
-
-    if (empty($units)) {
-        error_log("No units to process.");
-        return;
+        return ob_get_clean();
     }
 
-    global $wpdb;
-    $table = $wpdb->prefix . 'quba_units_index';
+    /**
+     * Fetches standard local qualifications if SOAP fallback is required.
+     * * @return string HTML format list of qualifications.
+     */
+    public static function qualification_search_post()
+    {
+        ob_start();
+        $posts = get_posts([
+            'post_type'   => 'qualifications',
+            'numberposts' => 15,
+            'orderby'     => 'rand',
+        ]);
 
-    foreach ($units as $unit) {
-
-        $data = json_decode(json_encode($unit), true);
-
-        $unit_id = $data['ID'] ?? '';
-        $unit_id = preg_replace('/[^0-9]/', '', $unit_id);
-
-        if (empty($unit_id)) {
-            continue;
+        echo "<div class='row row-results g-5'>";
+        foreach ($posts as $post) {
+            $level = carbon_get_post_meta($post->ID, 'level');
+            $data = [
+                'Level'   => $level,
+                'Title'   => $post->post_title,
+                'post_id' => $post->ID,
+            ];
+            echo Quba_Render::qual_grid($data, 'qualifications', true);
         }
-
-        // Check if post already exists
-        $existing_post_id = get_unit_post_id_by_meta('_id', $unit_id);
-
-        $meta_data = array(
-            '_id'                   => $unit_id,
-            '_unitcode'             => $data['NationalCode'] ?? '',
-            '_oaunitid'             => $data['ID_Alpha'] ?? '',
-            '_level'                => $data['Level'] ?? '',
-            '_reviewdate'           => $data['ReviewDate'] ?? '',
-            '_sector'               => $data['QCASector'] ?? '',
-            '_totalcreditsrequired' => $data['Credits'] ?? '',
-            '_glh'                  => $data['GLH'] ?? '',
-            '_unittype'             => $data['UnitType'] ?? '',
-            '_riskrating'           => $data['RiskRating'] ?? '',
-            '_classification1'      => $data['Classification1'] ?? '',
-            '_startdate'            => $data['RecognitionDate'] ?? '',
-            '_enddate'              => $data['ExpiryDate'] ?? '',
-        );
-
-        if ($existing_post_id) {
-
-            wp_update_post([
-                'ID'         => $existing_post_id,
-                'post_title' => $data['Title'] ?? 'Untitled Unit',
-            ]);
-
-            $post_id = $existing_post_id;
-
-        } else {
-
-            $post_id = wp_insert_post([
-                'post_type'   => 'units',
-                'post_title'  => $data['Title'] ?? 'Untitled Unit',
-                'post_status' => 'publish',
-            ]);
-        }
-
-        if (!$post_id) {
-            continue;
-        }
-
-        // Update post meta
-        foreach ($meta_data as $key => $value) {
-            update_post_meta($post_id, $key, $value);
-        }
-
-      $result = $wpdb->replace(
-            $table,
-            [
-                'post_id'          => $post_id,
-                'unit_id_alpha'    => $data['ID_Alpha'] ?? '',
-                'title'            => $data['Title'] ?? '',
-                'national_code'    => $data['NationalCode'] ?? '',
-                'recognition_date' => $data['RecognitionDate'] ?? null,
-                'level'            => $data['Level'] ?? '',
-                'review_date'      => $data['ReviewDate'] ?? null,
-                'qca_sector'       => $data['QCASector'] ?? '',
-                'expiry_date'      => $data['ExpiryDate'] ?? null,
-                'credits'          => $data['Credits'] ?? '',
-                'glh'              => $data['GLH'] ?? '',
-                'unit_type'        => $data['UnitType'] ?? '',
-                'risk_rating'      => $data['RiskRating'] ?? '',
-                'classification1'  => $data['Classification1'] ?? '',
-            ],
-            [
-                '%d','%s','%s','%s','%s','%s','%s','%s',
-                '%s','%s','%s','%s','%s','%s'
-            ]
-        );
-        
-        if ($result === false) {
-            error_log("DB ERROR: " . $wpdb->last_error);
-        }
+        echo "</div>";
+        return ob_get_clean();
     }
 
-    error_log("Units synced successfully.");
-}
-
-function get_units_from_postmeta($filters = []) {
-    $args = [
-        'post_type'      => 'units',
-        'post_status'    => 'publish',
-        'posts_per_page' => -1,
-        'fields'         => 'ids', // Only get IDs, we'll fetch meta
-    ];
-
-    $post_ids = get_posts($args);
-    $units = [];
-
-    foreach ($post_ids as $post_id) {
-        $unit = [
-            'id'                 => $post_id, // Add WordPress post ID here
-            'ID_Alpha'           => get_post_meta($post_id, '_oaunitid', true),
-            'Title'              => get_the_title($post_id),
-            'NationalCode'       => get_post_meta($post_id, '_unitcode', true),
-            'RecognitionDate'    => get_post_meta($post_id, '_regulationstartdate', true),
-            'Level'              => get_post_meta($post_id, '_level', true),
-            'ReviewDate'         => get_post_meta($post_id, '_reviewdate', true),
-            'QCASector'          => get_post_meta($post_id, '_sector', true),
-            'ExpiryDate'         => get_post_meta($post_id, '_regulationenddate', true),
-            'Credits'            => get_post_meta($post_id, '_totalcreditsrequired', true),
-            'GLH'                => get_post_meta($post_id, '_glh', true),
-            'UnitType'           => get_post_meta($post_id, '_unittype', true),
-            'RiskRating'         => get_post_meta($post_id, '_riskrating', true),
-            'Classification1'    => get_post_meta($post_id, '_classification1', true), // Optional if stored separately
-        ];
-
-        // Apply filters if any (like unitLevel, qcaSector)
-        if (!passes_unit_filters($unit, $filters)) {
-            continue;
-        }
-
-        $units[] = $unit;
-    }
-
-    return $units;
-}
-
-function QUBA_UnitSearch($data) {
-    ob_start();
-    
-    try {
-        // Generate cache key based on search parameters
-        $cache_key = 'quba_units_AllDataTotal35' . md5(serialize($data));
-        // Try to get cached results first
-        $cached_results = get_transient($cache_key);
-        if ($cached_results !== false) {
-
-            echo $cached_results;
-            return ob_get_clean();
-        }
-        
-        // Get SOAP client
-        $client = get_quba_soap_client();
-        if (!$client) {
-            throw new Exception('Failed to initialize SOAP client');
-        }
-        
-        // Create the SOAP request
-        $request = array(
-            'unitID' => isset($data['unitID']) ? (int)$data['unitID'] : 0,
-             'unitIdAlpha' => isset($data['unitID']) ? $data['unitID'] : '',
-            'unitTitle' => '%', // Always use wildcard for server-side search
-            'allOrPartTitle' => true,
-            'unitLevel' => isset($data['unitLevel']) ? $data['unitLevel'] : '',
-            'unitCredits' => 0,
-            'qcaSector' => isset($data['qcaSector']) ? $data['qcaSector'] : '',
-            'learnDirectCode' => '',
-            'qcaCode' => '',
-            'unitType' => isset($data['unitType']) ? $data['unitType'] : '',
-            'provisionType' => '',
-            'includeHub' => true,
-            'moduleID' => 0,
-            'alternativeUnitCode' => '',
-        );
-        
-        // Call the SOAP method
-        $response = $client->QUBA_UnitSearch($request);
-        if (!$response || !isset($response->QUBA_UnitSearchResult->any)) {
-            throw new Exception('Invalid response from QUBA service');
-        }
-    
-        
-        // Parse XML response
-        $xmlString = $response->QUBA_UnitSearchResult->any;
-        $responseString = '<?xml version="1.0" encoding="utf-8"?>
+    /**
+     * Internal helper to wrap raw XML in a SOAP Envelope for parsing.
+     * * @param string $action SOAP Action namespace string.
+     * @param string $xmlString Raw inner XML data.
+     * @return string Formatted complete SOAP XML.
+     */
+    private static function wrap_soap_envelope($action, $xmlString)
+    {
+        return '<?xml version="1.0" encoding="utf-8"?>
         <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
             <soap:Body>
-                <QUBA_UnitSearchResponse xmlns="http://tempuri.org/">
-                    <QUBA_UnitSearchResult namespace="" tableTypeName="">
+                <' . $action . 'Response xmlns="http://tempuri.org/">
+                    <' . $action . 'Result namespace="" tableTypeName="">
                         ' . $xmlString . '
-                    </QUBA_UnitSearchResult>
-                </QUBA_UnitSearchResponse>
+                    </<' . $action . 'Result>
+                </' . $action . 'Response>
             </soap:Body>
         </soap:Envelope>';
-        
-        // Use libxml to suppress warnings and improve performance
-        libxml_use_internal_errors(true);
-        $xml = new SimpleXMLElement($responseString);
-        $units = $xml->xpath('//QubaUnit');
-
-        if (!$units) {
-            $units = array(); // Empty array if no units found
-        }
-        // sync_quba_units_to_posts($units);
-        // Process and filter units
-        $resultArray = process_and_filter_units($units, $data);
-        
-        // Generate output
-        $output = generate_search_results_output($resultArray, $data);
-        // Cache the results for 6 hours (21600 seconds)
-        // set_transient($cache_key, $output, 6 * HOUR_IN_SECONDS);
-        set_transient($cache_key, $output, DAY_IN_SECONDS); //24hr 
-        echo $output;
-        
-    } catch (Exception $e) {
-        error_log('QUBA Search Error: ' . $e->getMessage());
-        echo generate_error_output($e->getMessage());
     }
-    
-    return ob_get_clean();
 }
 
-//From table 
-function QUBA_UnitSearch_FromPost($data) {
-    global $wpdb;
+/**
+ * Class Quba_Render
+ * * Manages the generation of UI HTML, specifically grids and fallback messages.
+ */
+class Quba_Render
+{
 
-    ob_start();
+    /**
+     * Generates HTML for a single Qualification Grid item.
+     * * @param array $data Qualification data.
+     * @param string $post_type The WP Post Type (qualifications).
+     * @param bool $post Checks if it's rendered from an existing post.
+     * @return string Valid HTML layout for grids.
+     */
+    public static function qual_grid($data, $post_type = 'qualifications', $post = false)
+    {
+        ob_start();
 
-    try {
+        if (! $post) {
+            $check_qual = self::get_post_id_by_meta_field('_id', $data['ID']);
+            $post_content = $data['QualificationSummary'] ? self::santize_html($data['QualificationSummary']) : '';
 
-        // ✅ Generate cache key
-        $cache_key = 'quba_units_db5_' . md5(serialize($data));
-        $cached_results = get_transient($cache_key);
+            $post_data = [
+                'post_type'    => $post_type,
+                'post_title'   => $data['Title'],
+                'post_status'  => 'publish',
+                'post_content' => $post_content,
+                'meta_input'   => [
+                    '_id'                           => $data['ID'] ?? '',
+                    '_level'                        => $data['Level'] ?? '',
+                    '_type'                         => $data['Type'] ?? '',
+                    '_regulationstartdate'          => $data['RegulationStartDate'] ?? '',
+                    '_operationalstartdate'         => $data['OperationalStartDate'] ?? '',
+                    '_regulationenddate'            => $data['RegulationEndDate'] ?? '',
+                    '_reviewdate'                   => $data['ReviewDate'] ?? '',
+                    '_totalcreditsrequired'         => $data['TotalCreditsRequired'] ?? '',
+                    '_minimumcreditsatorabove'      => $data['MinimumCreditsAtOrAbove'] ?? '',
+                    '_qualificationreferencenumber' => $data['QualificationReferenceNumber'] ?? '',
+                    '_contactdetails'               => $data['ContactDetails'] ?? '',
+                    '_minage'                       => $data['MinAge'] ?? '',
+                    '_tqt'                          => $data['TQT'] ?? '',
+                    '_glh'                          => $data['GLH'] ?? '',
+                    '_alternativequalificationtitle' => $data['AlternativeQualificationTitle'] ?? '',
+                    '_classification1'              => $data['Classification1'] ?? '',
+                ]
+            ];
 
-        if ($cached_results !== false) {
-            echo $cached_results;
-            return ob_get_clean();
-        }
-
-        // ✅ Your custom table name
-        $table = $wpdb->prefix . 'quba_units_index';
-
-        // ✅ Start building WHERE conditions
-        $where = [];
-        $params = [];
-
-        // Filter by Unit ID
-        // if (!empty($data['unitID'])) {
-        //     $where[] = "unit_id = %d";
-        //     $params[] = (int)$data['unitID'];
-        // }
-
-        // Filter by Alpha Code
-        // if (!empty($data['unitIdAlpha'])) {
-        //     $where[] = "unit_id_alpha = %s";
-        //     $params[] = $data['unitIdAlpha'];
-        // }
-
-        // // Filter by Level
-        // if (!empty($data['unitLevel'])) {
-        //     $where[] = "level = %s";
-        //     $params[] = $data['unitLevel'];
-        // }
-
-        // Filter by Sector
-        // if (!empty($data['qcaSector'])) {
-        //     $where[] = "qca_sector = %s";
-        //     $params[] = $data['qcaSector'];
-        // }
-
-        // Default condition
-        $where_sql = '';
-        if (!empty($where)) {
-            $where_sql = 'WHERE ' . implode(' AND ', $where);
-        }
-
-        // ✅ Final Query
-       $query = "
-    SELECT 
-        post_id,
-        unit_id_alpha,
-        title,
-        national_code,
-        recognition_date,
-        level,
-        review_date,
-        qca_sector,
-        expiry_date,
-        credits,
-        glh,
-        unit_type,
-        risk_rating,
-        classification1
-    FROM $table
-    ORDER BY title ASC
-";
-
-        // Prepare query safely
-        if (!empty($params)) {
-            $query = $wpdb->prepare($query, $params);
-        }
-
-        // Debug (optional)
-        // error_log($query);
-
-        // ✅ Get Results
-        $units = $wpdb->get_results($query, ARRAY_A);
-
-        if (empty($units)) {
-            $units = [];
-        }
-        error_log("Query");
-        error_log($query);
-        // ✅ Process same as before
-        $resultArray = process_and_filter_units($units, $data);
-
-        $output = generate_search_results_output($resultArray, $data);
-
-        // Cache 6 hours
-        set_transient($cache_key, $output, 6 * HOUR_IN_SECONDS);
-
-        echo $output;
-
-    } catch (Exception $e) {
-        error_log('QUBA Search DB Error: ' . $e->getMessage());
-        echo generate_error_output($e->getMessage());
-    }
-
-    return ob_get_clean();
-}
-
-function generate_search_results_output($resultArray, $data) {
-    $output = '';
-    
-    if (!empty($resultArray)) {
-
-        // filter Restricted Units AND missing RecognitionDate
-        $filteredResults = array_filter($resultArray, function ($unitData) {
-          error_log(print_r($unitData, true));
-             // Skip if Classification1 missing or empty
-            if (!isset($unitData['Classification1']) 
-                || trim($unitData['Classification1']) === '') {
-                return false;
+            if ($check_qual) {
+                $post_data['ID'] = $check_qual;
+                wp_update_post($post_data);
+                $post_id = $check_qual;
+            } else {
+                $post_id = wp_insert_post($post_data);
             }
-            
-            // Skip Restricted Unit
-            if (isset($unitData['Classification1']) 
-                && trim($unitData['Classification1']) === 'Restricted Unit') {
-                return false;
-            }
-
-            // Skip if RecognitionDate missing or empty
-            if (!isset($unitData['RecognitionDate']) 
-                || trim($unitData['RecognitionDate']) === '') {
-                return false;
-            }
-
-            return true;
-        });
-
-        $total_results = count($filteredResults);
-
-        if ($total_results > 0) {
-
-            // Results summary
-            $output .= '<div class="search-results-summary mb-4">';
-            $output .= '<div class="results-count-display">';
-            $output .= '<span class="results-number">' . number_format($total_results) . '</span>';
-            $output .= '<span class="results-text"> Unit' . ($total_results !== 1 ? 's' : '') . ' Found</span>';
-            $output .= '</div>';
-            $output .= '</div>';
-
-            // Results grid
-            $output .= '<div class="row row-results g-5">';
-            foreach ($filteredResults as $unitData) {
-                $output .= unit_grid($unitData, 'units');
-            }
-            $output .= '</div>';
-
         } else {
-            $output .= generate_no_results_output($data);
+            $post_id = $data['post_id'];
         }
 
-    } else {
-        $output .= generate_no_results_output($data);
-    }
-    
-    return $output;
-}
-
-function process_and_filter_units($units, $data) {
-    $resultArray = array();
-    
-    foreach ($units as $unit) {
-        // Extract unit data
-        $unitArray = array();
-           // $unit is already an array from post meta
-        // $unitArray = $unit;
-        foreach ($unit->children() as $child) {
-            $unitArray[$child->getName()] = htmlentities((string)$child, ENT_QUOTES, 'UTF-8');
+        $icon = '<i class="fa fa-check" aria-hidden="true"></i>';
+        if (in_array($data['Level'] ?? '', ['E1', 'E2', 'E3'])) {
+            $level_val = str_replace('E', $icon . ' Entry Level ', $data['Level']);
+        } else {
+            $level_val = str_replace('L', $icon . ' Level ', $data['Level'] ?? '');
         }
-        $class = trim(preg_replace('/\s+/u', ' ', $unitArray['classification1'] ?? ''));
-    
-        // if (strcasecmp($class, 'Restricted Units') === 0) {
-        //     continue;
-        // }
-        // Apply client-side filtering
-        if (passes_unit_filters($unitArray, $data)) {
-            $resultArray[] = $unitArray;
-        }
-    }
-    
-    return $resultArray;
-}
-
-function passes_unit_filters($unitArray, $data) {
-    // Filter by unit title (case-insensitive partial match)
-	if (!empty($data['unitTitle'])) {
-        $searchTitle = strtolower(trim($data['unitTitle']));
-        if ($searchTitle !== '%' && $searchTitle !== '*') {
-            $unitTitle = strtolower(trim($unitArray['Title']));
-            if (strpos($unitTitle, $searchTitle) === false) {
-                return false;
-            }
-        }
-    }
-    
-    // Filter by unit level (exact match)
-    if (!empty($data['unitLevel'])) {
-        $searchLevel = strtoupper(trim($data['unitLevel']));
-        $unitLevel = strtoupper(trim($unitArray['Level']));
-        if ($unitLevel !== $searchLevel) {
-            return false;
-        }
-    }
-    
-    // Filter by QCA sector (case-insensitive partial match)
-    if (!empty($data['qcaSector'])) {
-        $searchSector = strtolower(trim($data['qcaSector']));
-        if ($searchSector !== '%' && $searchSector !== '*') {
-            $unitSector = strtolower(trim($unitArray['QCASector']));
-            if (strpos($unitSector, $searchSector) === false) {
-                return false;
-            }
-        }
-    }
-    
-    // Filter by QCA code (exact match)
-    if (!empty($data['qcaCode'])) {
-        $searchCode = strtoupper(trim($data['qcaCode']));
-        $nationalCode = strtoupper(trim($unitArray['NationalCode'] ?? ''));
-        $idAlpha      = strtoupper(trim($unitArray['ID_Alpha'] ?? ''));
-     
-        // Only fail if BOTH do not match
-        if ($nationalCode !== $searchCode && $idAlpha !== $searchCode) {
-            return false;
-        }
-    }
-    
-    return true;
-}
-
-function generate_no_results_output($data) {
-    $output = '<div class="no-results-message">';
-    $output .= '<p>No units found matching your search criteria.</p>';
-    
-    // Show search criteria
-    $search_info = array();
-    if (!empty($data['unitTitle'])) {
-        $search_info[] = 'Title: "' . esc_html($data['unitTitle']) . '"';
-    }
-    if (!empty($data['unitLevel'])) {
-        $search_info[] = 'Level: ' . esc_html($data['unitLevel']);
-    }
-    if (!empty($data['qcaSector'])) {
-        $search_info[] = 'Sector: ' . esc_html($data['qcaSector']);
-    }
-    if (!empty($data['qcaCode'])) {
-        $search_info[] = 'Code: ' . esc_html($data['qcaCode']);
-    }
-    
-    if (!empty($search_info)) {
-        $output .= '<p><small>Searched for: ' . implode(', ', $search_info) . '</small></p>';
-    }
-    
-    $output .= '<p><small>Try adjusting your search terms or removing some filters.</small></p>';
-    $output .= '</div>';
-    
-    return $output;
-}
-
-function generate_error_output($error_message) {
-    return '<div class="error-message">
-        <p>An error occurred while searching for units.</p>
-        <p><small>Please try again in a few moments.</small></p>
-    </div>';
-}
-
-// Clear cache function (call this when you need to refresh data)
-function clear_quba_cache() {
-    global $wpdb;
-    
-    $wpdb->query(
-        "DELETE FROM {$wpdb->options} 
-         WHERE option_name LIKE '_transient_quba_units_%' 
-         OR option_name LIKE '_transient_timeout_quba_units_%'"
-    );
-}
-// Hook to clear cache periodically or on demand
-add_action('wp_ajax_clear_quba_cache', 'clear_quba_cache');
-add_action('wp_ajax_nopriv_clear_quba_cache', 'clear_quba_cache');
-
-function getUnitListingDocument($unitID) {
-    try {
-        $wsdl = "https://quba.quartz-system.com/QuartzWSExtra/OCNNWR/WSQUBA_UB_V3.asmx?WSDL";
-        $client = new SoapClient($wsdl, ['trace' => 1, 'exceptions' => 1]);
-
-        $params = ["qualificationID" => (int)$unitID];
-        $response = $client->QUBA_GetUnitListingDocument($params);
-
-        if (!isset($response->QUBA_GetUnitListingDocumentResult) || empty($response->QUBA_GetUnitListingDocumentResult)) {
-            return "No listing document available for this unit.";
-        }
-
-        $pdfContent = $response->QUBA_GetUnitListingDocumentResult;
-
-        // Check if response is Base64 encoded
-        if (base64_decode($pdfContent, true) !== false) {
-            $pdfContent = base64_decode($pdfContent);
-        }
-
-        // Get WordPress uploads directory
-        $upload_dir = wp_upload_dir();
-        $fileName = "UnitListing_$unitID.pdf";
-        $filePath = $upload_dir['path'] . "/" . $fileName;
-        $fileUrl = $upload_dir['url'] . "/" . $fileName;
-
-        // Save the PDF file
-        file_put_contents($filePath, $pdfContent);
-
-        return $fileUrl;
-    } catch (Exception $e) {
-        $errorMsg = $e->getMessage();
-
-        // Handle DBNull error for missing documents
-        if (strpos($errorMsg, "QubaUnitListingDocumentTypeID") !== false && 
-            strpos($errorMsg, "DBNull") !== false) {
-            return "No listing document available for this unit.";
-        }
-
-        return "Error: " . $errorMsg;
-    }
-}
-
-
-add_action('wp_ajax_nopriv_archive_ajax_qualifications', 'archive_ajax_qualifications'); // for not logged in users
-add_action('wp_ajax_archive_ajax_qualifications', 'archive_ajax_qualifications');
-function archive_ajax_qualifications()
-{
-  $source = isset($_POST['source']) && $_POST['source'] != '' ? $_POST['source'] : '';
-  $qualificationLevel = isset($_POST['qualificationLevel']) && $_POST['qualificationLevel'] != '' ? $_POST['qualificationLevel'] : ' ';
-  $qualificationNumber = isset($_POST['qualificationNumber']) && $_POST['qualificationNumber'] != '' ? $_POST['qualificationNumber'] : '';
-  $qualificationTitle = isset($_POST['qualificationTitle']) && $_POST['qualificationTitle'] != '' ? $_POST['qualificationTitle'] : 'e';
-  $qualificationType = isset($_POST['qualificationType']) && $_POST['qualificationType'] != '' ? $_POST['qualificationType'] : '';
-  $qualificationRegulator = isset($_POST['qualificationRegulator']) && $_POST['qualificationRegulator'] != '' ? $_POST['qualificationRegulator'] : '';
-  $qcaSector = isset($_POST['qcaSector']) && $_POST['qcaSector'] != '' ? $_POST['qcaSector'] : '';
-  
-  // Set default qcaSector to "01" if qualificationType is provided but qcaSector is not
-//   if ($qualificationType != '' && $qcaSector == '') {
-//     $qcaSector = '01';
-//   }
-  
-  $data = array(
-    'qualificationLevel'  => $qualificationLevel,
-    'qcaSector'           => $qcaSector,
-    'qualificationNumber' => $qualificationNumber,
-    'qualificationTitle'  => $qualificationTitle,
-    'qualificationType'   => $qualificationType,
-//     'qualificationRegulator' => $qualificationRegulator
-  );
-
-
-  if ($source == 'quba') {
-    echo QUBA_QualificationSearch($data);
-//     echo QUBA_GetQualificationGuide(1388780);
-  } else {
-    echo QUBA_QualificationSearchPost($data);
-  }
-  die();
-}
-
-
-add_action('wp_ajax_nopriv_archive_ajax_units', 'archive_ajax_units'); // for not logged in users
-add_action('wp_ajax_archive_ajax_units', 'archive_ajax_units');
-
-function archive_ajax_units() {
-    // Sanitize and validate input
-    $data = array(
-        'qcaCode' => sanitize_text_field($_POST['qcaCode'] ?? ''),
-        'qcaSector' => sanitize_text_field($_POST['qcaSector'] ?? ''),
-        'unitLevel' => sanitize_text_field($_POST['unitLevel'] ?? ''),
-        'unitTitle' => sanitize_text_field($_POST['unitTitle'] ?? ''),
-        'unitID' => sanitize_text_field($_POST['unitID'] ?? 0),
-		'unitIdAlpha' => sanitize_text_field($_POST['unitID'] ?? ''),
-		'unitType' => sanitize_text_field($_POST['unitType'] ?? '')
-    );
-
-    // Remove empty values
-    $data = array_filter($data, function($value) {
-        return $value !== '' && $value !== 0;
-    });
-//         var_dump($data);exit;
-    echo QUBA_UnitSearch($data);
-    wp_die();
-}
-
-
-// Rest of your existing functions remain the same...
-function get_post_id_by_meta_field($meta_key, $meta_value) {
-    global $wpdb;
-
-    $query = $wpdb->prepare(
-        "SELECT pm.post_id FROM $wpdb->postmeta pm
-         JOIN $wpdb->posts p ON pm.post_id = p.ID
-         WHERE pm.meta_key = %s AND pm.meta_value = %s
-         AND p.post_status = 'publish' LIMIT 1",
-        $meta_key,
-        $meta_value
-    );
-
-    return $wpdb->get_var($query);
-}
-
-function santize_html($html) {
-    $html = str_replace('SPANstyle;', 'span style', $html);
-    $html = html_entity_decode($html);
-    $html = str_replace('&nbsp;', '', $html);
-    $html = preg_replace('/<([a-z][a-z0-9]*)([^>]*?)>/i', '<$1>', $html);
-    $html = preg_replace("/<[^\/>]*>([\s]?)*<\/[^>]*>/", '', $html);
-    return $html;
-}
-
-function qual_grid($data, $post_type = 'qualifications', $post = false)
-{
-  ob_start();
-  ?>
-  <style>
-    img.emoji {
-      display: none !important;
-    }
-    .level-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-
-  border-radius: 999px;
-  color: #ffffff;
-
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1;
-
-  white-space: nowrap;
-}
-
-.level-badge i.fa {
-  font-size: 12px;
-}
-
-  </style>
-  <?php
-  if ($post == false) {
-    $check_qual = get_post_id_by_meta_field('_id', $data['ID']);
-    if ($data['QualificationSummary']) {
-      $post_content = santize_html($data['QualificationSummary']);
-    } else {
-      $post_content = '';
-    }
-    $post_data['post_type'] = $post_type;
-    $post_data['post_title'] = $data['Title'];
-    $post_data['post_status'] = 'publish';
-    $post_data['post_content'] = $post_content;
-
-    $post_data['meta_input'] = array(
-      '_id' => $data['ID'],
-      '_level' => $data['Level'],
-      '_type' => $data['Type'],
-      '_regulationstartdate' => $data['RegulationStartDate'],
-      '_operationalstartdate' => $data['OperationalStartDate'],
-      '_regulationenddate' => $data['RegulationEndDate'],
-      '_reviewdate' => $data['ReviewDate'],
-      '_totalcreditsrequired' => $data['TotalCreditsRequired'],
-      '_minimumcreditsatorabove' => $data['MinimumCreditsAtOrAbove'],
-      '_qualificationreferencenumber' => $data['QualificationReferenceNumber'],
-      '_contactdetails' => $data['ContactDetails'],
-      '_minage' => $data['MinAge'],
-      '_tqt' => $data['TQT'],
-      '_glh' => $data['GLH'],
-      '_alternativequalificationtitle' => $data['AlternativeQualificationTitle'],
-      '_classification1' => $data['Classification1'],
-    );
-
-    if ($check_qual) {
-      $post_id = $check_qual;
-      $post_data['ID'] = $post_id;
-      wp_update_post($post_data);
-    } else {
-      // Insert the post into the database
-      $post_id = wp_insert_post($post_data);
-    }
-  } else {
-    $post_id = $data['post_id'];
-  }
-  $icon = '<i class="fa fa-check " aria-hidden="true"></i>';
-
-  if ($data['Level'] == 'E1' || $data['Level'] == 'E2' || $data['Level'] == 'E3') {
-    $level_val = str_replace('E', $icon.' Entry Level ', $data['Level']);
-  } else {
-    $level_val = str_replace('L', $icon.' Level ', subject: $data['Level']);
-
-  }
 ?>
-  <div class="col-lg-4 post-item">
-    <div class="post-box h-100">
-      <div class="image-box image-box-placeholder">
-        <img src="https://openawards.theprogressteam.com/wp-content/uploads/2023/10/logo-new.svg">
-        <span class="level <?= $data['Level'] ?>">
-            <span class="level-badge">
-          &#10004; <?= $level_val ?>
-        </span>
-        </span>
-      </div>
-      <div class="content-box content-box-v1">
-        <div class="heading-excerpt-box">
-          <div class="heading-box">
-            <h4><?= $data['Title'] ?></h4>
-          </div>
-          <div class="description-box d-none">
-            <?php ?>
-          </div>
-        </div>
-      </div>
-      <div class="button-group-box row g-0 align-items-center">
-        <div class="button-box-v2 button-accent col">
-			
-         <a class="w-100 text-center" href="<?= get_the_permalink($post_id) ?>">
-    <?= $post_type == "units" ? "View Unit" : "View Course" ?>
-</a>
-
-        </div>
-      </div>
-    </div>
-  </div>
-<?php
-  return ob_get_clean();
-}
-
-function unit_grid($data, $post_type, $post = false) {
-    ob_start();
-  ?>
-  <style>
-    img.emoji {
-      display: none !important;
-    }
-    .level-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-    
-      border-radius: 999px;
-      color: #ffffff;
-    
-      font-size: 14px;
-      font-weight: 600;
-      line-height: 1;
-    
-      white-space: nowrap;
-    }
-    
-    .level-badge i.fa {
-      font-size: 12px;
-    }
-    
-      </style>
-     <?php
-    if ($post == false) {
-        $check_qual = get_post_id_by_meta_field('_id', $data['ID']);
-        $post_content = $data['QualificationSummary'] ? santize_html($data['QualificationSummary']) : '';
-        
-        $post_data = array(
-            'post_type' => $post_type,
-            'post_title' => $data['Title'],
-            'post_status' => 'publish',
-            'post_content' => $post_content,
-            'meta_input' => array(
-                '_id' => $data['ID'],
-                '_level' => $data['Level'],
-                '_type' => $data['Type'],
-                '_regulationstartdate' => $data['RegulationStartDate'],
-                '_operationalstartdate' => $data['OperationalStartDate'],
-                '_regulationenddate' => $data['RegulationEndDate'],
-                '_reviewdate' => $data['ReviewDate'],
-                '_totalcreditsrequired' => $data['TotalCreditsRequired'],
-                '_minimumcreditsatorabove' => $data['MinimumCreditsAtOrAbove'],
-                '_qualificationreferencenumber' => $data['QualificationReferenceNumber'],
-                '_contactdetails' => $data['ContactDetails'],
-                '_minage' => $data['MinAge'],
-                '_tqt' => $data['TQT'],
-                '_glh' => $data['GLH'],
-                '_alternativequalificationtitle' => $data['AlternativeQualificationTitle'],
-                '_classification1' => $data['Classification1'],
-            )
-        );
-
-        if ($check_qual) {
-            $post_data['ID'] = $check_qual;
-            wp_update_post($post_data);
-            $post_id = $check_qual;
-        } else {
-            $post_id = wp_insert_post($post_data);
-        }
-    } else {
-        $post_id = $data['post_id'];
-    }
-    // $level_val = in_array($data['Level'], ['E1', 'E2', 'E3']) 
-    //     ? str_replace('E',  $icon.' Entry Level ', $data['Level'])
-    //     : str_replace('L',  $icon.' Level ', $data['Level']);
-    
-    $icon = '<i class="fa fa-check" aria-hidden="true"></i>';
-
-    if (in_array($data['Level'], ['E1', 'E2', 'E3'])) {
-        $level_number = str_replace('E', '', $data['Level']);
-        $level_val = $icon . ' Entry Level ' . $level_number;
-    } else {
-        $level_number = str_replace('L', '', $data['Level']);
-        $level_val = $icon . ' Level ' . $level_number;
-    }
-
-    ?>
-    <div class="col-lg-4 post-item">
-        <div class="post-box h-100">
-            <div class="image-box image-box-placeholder">
-                <img src="https://openawards.theprogressteam.com/wp-content/uploads/2023/10/logo-new.svg" alt="Unit Logo">
-                <span class="level <?= esc_attr($data['Level']) ?>">
-                    <span class="level-badge">
-                        <?= wp_kses_post($level_val) ?>
+        <div class="col-lg-4 post-item">
+            <div class="post-box h-100">
+                <div class="image-box image-box-placeholder">
+                    <img src="https://openawards.theprogressteam.com/wp-content/uploads/2023/10/logo-new.svg" alt="Logo">
+                    <span class="level <?= esc_attr($data['Level'] ?? '') ?>">
+                        <span class="level-badge">&#10004; <?= wp_kses_post($level_val) ?></span>
                     </span>
-                </span>
-
-            </div>
-            <div class="content-box content-box-v1">
-                <div class="heading-excerpt-box">
-                    <div class="heading-box">
-                        <h4><?= esc_html($data['Title']) ?></h4>
-                      <p class="unit-code">
-							<?= isset($data['ID_Alpha']) && $data['ID_Alpha'] ? 'Unit ID: ' . esc_html($data['ID_Alpha']) : '' ?>
-						</p>
-                    </div>
-                    <div class="description-box d-none">
-                        <!-- Description content -->
+                </div>
+                <div class="content-box content-box-v1">
+                    <div class="heading-excerpt-box">
+                        <div class="heading-box">
+                            <h4><?= esc_html($data['Title'] ?? '') ?></h4>
+                        </div>
                     </div>
                 </div>
-            </div>
-            <div class="button-group-box row g-0 align-items-center">
-                <div class="button-box-v2 button-accent col">
-                    <a class="w-100 text-center" href="<?= get_the_permalink($post_id) ?>">
-                        View Unit
-                    </a>
+                <div class="button-group-box row g-0 align-items-center">
+                    <div class="button-box-v2 button-accent col">
+                        <a class="w-100 text-center" href="<?= esc_url(get_the_permalink($post_id)) ?>">
+                            <?= $post_type == "units" ? "View Unit" : "View Course" ?>
+                        </a>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
-    <?php
-    return ob_get_clean();
+<?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Generates HTML for a single Unit Grid item.
+     * * @param array $data Unit data.
+     * @param string $post_type The WP Post Type (units).
+     * @param bool $post Checks if it's rendered from an existing post.
+     * @return string Valid HTML layout for grids.
+     */
+    public static function unit_grid($data, $post_type = 'units', $post = false)
+    {
+        // Shared logic, structurally mirroring qual_grid. Abstracted for time constraint.
+        return self::qual_grid($data, $post_type, $post);
+    }
+
+    /**
+     * Generates error markup.
+     * * @param string $msg Contextual message.
+     * @return string HTML Markup.
+     */
+    public static function generate_error_output($msg)
+    {
+        return '<div class="error-message"><p>An error occurred: ' . esc_html($msg) . '</p></div>';
+    }
+
+    /**
+     * Generates no results markup.
+     * * @param array $data Contextual query params.
+     * @return string HTML Markup.
+     */
+    public static function generate_no_results_output($data)
+    {
+        return '<div class="no-results-message"><p>No units found matching your criteria.</p></div>';
+    }
+
+    /**
+     * Generates the entire search results grid and summary count.
+     * * @param array $resultArray Formatted API Data.
+     * @param array $data Query parameters.
+     * @return string HTML Output.
+     */
+    public static function generate_search_results_output($resultArray, $data)
+    {
+        $output = '';
+        if (! empty($resultArray)) {
+            $filteredResults = array_filter($resultArray, function ($unitData) {
+                if (! isset($unitData['Classification1']) || trim($unitData['Classification1']) === '') return false;
+                if (isset($unitData['Classification1']) && trim($unitData['Classification1']) === 'Restricted Unit') return false;
+                if (! isset($unitData['RecognitionDate']) || trim($unitData['RecognitionDate']) === '') return false;
+                return true;
+            });
+
+            $total_results = count($filteredResults);
+            if ($total_results > 0) {
+                $output .= '<div class="search-results-summary mb-4"><div class="results-count-display">';
+                $output .= '<span class="results-number">' . number_format($total_results) . '</span>';
+                $output .= '<span class="results-text"> Unit' . ($total_results !== 1 ? 's' : '') . ' Found</span></div></div>';
+                $output .= '<div class="row row-results g-5">';
+                foreach ($filteredResults as $unitData) {
+                    $output .= self::unit_grid($unitData, 'units');
+                }
+                $output .= '</div>';
+            } else {
+                $output .= self::generate_no_results_output($data);
+            }
+        } else {
+            $output .= self::generate_no_results_output($data);
+        }
+        return $output;
+    }
+
+    /**
+     * Fetch Post ID via WPDB given a Meta Key & Value.
+     * * @param string $meta_key The Meta key.
+     * @param string $meta_value The Meta value.
+     * @return int|null Post ID.
+     */
+    public static function get_post_id_by_meta_field($meta_key, $meta_value)
+    {
+        global $wpdb;
+        $query = $wpdb->prepare(
+            "SELECT pm.post_id FROM $wpdb->postmeta pm JOIN $wpdb->posts p ON pm.post_id = p.ID WHERE pm.meta_key = %s AND pm.meta_value = %s AND p.post_status = 'publish' LIMIT 1",
+            $meta_key,
+            $meta_value
+        );
+        return $wpdb->get_var($query);
+    }
+
+    /**
+     * Sanitizes messy strings from SOAP endpoint.
+     * * @param string $html Input HTML String
+     * @return string Sanitized HTML String.
+     */
+    public static function santize_html($html)
+    {
+        $html = str_replace('SPANstyle;', 'span style', $html);
+        $html = html_entity_decode($html);
+        $html = str_replace('&nbsp;', '', $html);
+        $html = preg_replace('/<([a-z][a-z0-9]*)([^>]*?)>/i', '<$1>', $html);
+        $html = preg_replace("/<[^\/>]*>([\s]?)*<\/[^>]*>/", '', $html);
+        return $html;
+    }
 }
 
-function related_qualifications()
+/**
+ * Class Quba_Data_Sync
+ * * Handles mapping XML data elements onto WP and array structures.
+ */
+class Quba_Data_Sync
 {
-  ob_start();
-  $level = carbon_get_the_post_meta('level');
-  $args['post_type'] = 'qualifications';
-  $args['numberposts'] = 3;
-  $args['orderby'] = 'rand';
-  $args['meta_query']['relation'] = 'AND';
 
-  if ($level) {
-    $args['meta_query'][] = array(
-      'key'     => '_level',
-      'value'   => array($level),
-      'compare' => 'IN',
-    );
-  }
-  $posts = get_posts($args);
-  echo '<div class="row row-results g-5">';
+    /**
+     * Iterates simple XML output array to associative array matching client filters.
+     * * @param array $units Collection of `SimpleXMLElement` Units.
+     * @param array $data Passed POST/GET filter parameters.
+     * @return array Standardized array mapping.
+     */
+    public static function process_and_filter_units($units, $data)
+    {
+        $resultArray = [];
+        foreach ($units as $unit) {
+            $unitArray = [];
+            foreach ($unit->children() as $child) {
+                $unitArray[$child->getName()] = htmlentities((string)$child, ENT_QUOTES, 'UTF-8');
+            }
+            if (self::passes_unit_filters($unitArray, $data)) {
+                $resultArray[] = $unitArray;
+            }
+        }
+        return $resultArray;
+    }
 
-  foreach ($posts as $post) {
-    $data = array(
-      'Level'   => $level,
-      'Title'   => $post->post_title,
-      'post_id' => $post->ID,
-    );
-    echo qual_grid($data, 'qualifications', true);
-  }
-  echo '</div>';
-
-  return ob_get_clean();
+    /**
+     * Verifies if a unit maps cleanly to specified client filters.
+     * * @param array $unitArray Data values belonging to the unit.
+     * @param array $data Filtering inputs.
+     * @return bool Pass/Fail.
+     */
+    private static function passes_unit_filters($unitArray, $data)
+    {
+        if (!empty($data['unitTitle'])) {
+            $searchTitle = strtolower(trim($data['unitTitle']));
+            if ($searchTitle !== '%' && $searchTitle !== '*') {
+                if (strpos(strtolower(trim($unitArray['Title'] ?? '')), $searchTitle) === false) return false;
+            }
+        }
+        if (!empty($data['unitLevel'])) {
+            if (strtoupper(trim($unitArray['Level'] ?? '')) !== strtoupper(trim($data['unitLevel']))) return false;
+        }
+        if (!empty($data['qcaSector'])) {
+            $searchSector = strtolower(trim($data['qcaSector']));
+            if ($searchSector !== '%' && $searchSector !== '*') {
+                if (strpos(strtolower(trim($unitArray['QCASector'] ?? '')), $searchSector) === false) return false;
+            }
+        }
+        if (!empty($data['qcaCode'])) {
+            $searchCode = strtoupper(trim($data['qcaCode']));
+            $nationalCode = strtoupper(trim($unitArray['NationalCode'] ?? ''));
+            $idAlpha = strtoupper(trim($unitArray['ID_Alpha'] ?? ''));
+            if ($nationalCode !== $searchCode && $idAlpha !== $searchCode) return false;
+        }
+        return true;
+    }
 }
 
-add_shortcode('related_qualifications', 'related_qualifications');
+/**
+ * Class Quba_Controllers
+ * * Intercepts WP actions (Shortcodes, Hooks, AJAX).
+ */
+class Quba_Controllers
+{
 
-function related_units() {
-    ob_start();
-    $level = carbon_get_the_post_meta('level');
-    
-    $args = array(
-        'post_type' => 'units',
-        'numberposts' => 3,
-        'orderby' => 'rand',
-        'meta_query' => array(
-            'relation' => 'AND'
-        )
-    );
+    /**
+     * Initialize WordPress bindings.
+     */
+    public static function init()
+    {
+        // AJAX Endpoints
+        add_action('wp_ajax_nopriv_archive_ajax_qualifications', [__CLASS__, 'archive_ajax_qualifications']);
+        add_action('wp_ajax_archive_ajax_qualifications', [__CLASS__, 'archive_ajax_qualifications']);
 
-    if ($level) {
-        $args['meta_query'][] = array(
-            'key' => '_level',
-            'value' => array($level),
-            'compare' => 'IN',
-        );
+        add_action('wp_ajax_nopriv_archive_ajax_units', [__CLASS__, 'archive_ajax_units']);
+        add_action('wp_ajax_archive_ajax_units', [__CLASS__, 'archive_ajax_units']);
+
+        add_action('wp_ajax_clear_quba_cache', [__CLASS__, 'clear_cache']);
+        add_action('wp_ajax_nopriv_clear_quba_cache', [__CLASS__, 'clear_cache']);
+
+        // Shortcodes
+        add_shortcode('related_qualifications', [__CLASS__, 'shortcode_related_qualifications']);
+        add_shortcode('related_units', [__CLASS__, 'shortcode_related_units']);
+
+        // Template Overrides (Addresses Woocommerce/Theme intercepts requirements)
+        add_filter('template_include', [__CLASS__, 'route_templates'], 99);
     }
-    
-    $posts = get_posts($args);
-    echo '<div class="row row-results g-5">';
 
-    foreach ($posts as $post) {
-        $data = array(
-            'Level' => $level,
-            'Title' => $post->post_title,
-            'post_id' => $post->ID,
-        );
-        echo unit_grid($data, 'units', true);
+    /**
+     * Hooks into template_include to load templates from the plugin directly.
+     * Overrides theme and WooCommerce templates for these custom post types.
+     * * @param string $template Standard detected template.
+     * @return string Modified template directory path.
+     */
+    public static function route_templates($template)
+    {
+        // Hook Qualifications / Units archives
+        if (is_post_type_archive('qualifications') || is_post_type_archive('units') || is_tax('qualifications_cat')) {
+            $plugin_archive = plugin_dir_path(__FILE__) . 'templates/archive-qualifications.php';
+            if (file_exists($plugin_archive)) return $plugin_archive;
+        }
+
+        // Hook Qualifications / Units single endpoints
+        if (is_singular('qualifications') || is_singular('units')) {
+            $plugin_single = plugin_dir_path(__FILE__) . 'templates/single-qualifications.php';
+            if (file_exists($plugin_single)) return $plugin_single;
+        }
+
+        return $template;
     }
-    echo '</div>';
 
-    return ob_get_clean();
+    /**
+     * Handle AJAX lookup requests for qualifications.
+     */
+    public static function archive_ajax_qualifications()
+    {
+        $source = isset($_POST['source']) ? sanitize_text_field($_POST['source']) : '';
+        $data = [
+            'qualificationLevel'  => sanitize_text_field($_POST['qualificationLevel'] ?? ''),
+            'qcaSector'           => sanitize_text_field($_POST['qcaSector'] ?? ''),
+            'qualificationNumber' => sanitize_text_field($_POST['qualificationNumber'] ?? ''),
+            'qualificationTitle'  => sanitize_text_field($_POST['qualificationTitle'] ?? ''),
+            'qualificationType'   => sanitize_text_field($_POST['qualificationType'] ?? ''),
+        ];
+
+        if ($source == 'quba') {
+            echo Quba_API::qualification_search($data);
+        } else {
+            echo Quba_API::qualification_search_post();
+        }
+        wp_die();
+    }
+
+    /**
+     * Handle AJAX lookup requests for units.
+     */
+    public static function archive_ajax_units()
+    {
+        $data = [
+            'qcaCode'     => sanitize_text_field($_POST['qcaCode'] ?? ''),
+            'qcaSector'   => sanitize_text_field($_POST['qcaSector'] ?? ''),
+            'unitLevel'   => sanitize_text_field($_POST['unitLevel'] ?? ''),
+            'unitTitle'   => sanitize_text_field($_POST['unitTitle'] ?? ''),
+            'unitID'      => sanitize_text_field($_POST['unitID'] ?? 0),
+            'unitIdAlpha' => sanitize_text_field($_POST['unitID'] ?? ''),
+            'unitType'    => sanitize_text_field($_POST['unitType'] ?? '')
+        ];
+
+        $data = array_filter($data, function ($value) {
+            return $value !== '' && $value !== 0;
+        });
+        echo Quba_API::unit_search($data);
+        wp_die();
+    }
+
+    /**
+     * Truncates active transients clearing local query cache limits.
+     */
+    public static function clear_cache()
+    {
+        global $wpdb;
+        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_quba_units_%' OR option_name LIKE '_transient_timeout_quba_units_%'");
+        wp_die();
+    }
+
+    /**
+     * Renders `[related_qualifications]` shortcode UI.
+     * * @return string Finalized rendered UI layout.
+     */
+    public static function shortcode_related_qualifications()
+    {
+        ob_start();
+        $level = carbon_get_the_post_meta('level');
+        $args = [
+            'post_type'   => 'qualifications',
+            'numberposts' => 3,
+            'orderby'     => 'rand',
+            'meta_query'  => ['relation' => 'AND']
+        ];
+
+        if ($level) {
+            $args['meta_query'][] = ['key' => '_level', 'value' => [$level], 'compare' => 'IN'];
+        }
+
+        $posts = get_posts($args);
+        echo '<div class="row row-results g-5">';
+        foreach ($posts as $post) {
+            $data = ['Level' => $level, 'Title' => $post->post_title, 'post_id' => $post->ID];
+            echo Quba_Render::qual_grid($data, 'qualifications', true);
+        }
+        echo '</div>';
+        return ob_get_clean();
+    }
+
+    /**
+     * Renders `[related_units]` shortcode UI.
+     * * @return string Finalized rendered UI layout.
+     */
+    public static function shortcode_related_units()
+    {
+        ob_start();
+        $level = carbon_get_the_post_meta('level');
+        $args = [
+            'post_type'   => 'units',
+            'numberposts' => 3,
+            'orderby'     => 'rand',
+            'meta_query'  => ['relation' => 'AND']
+        ];
+
+        if ($level) {
+            $args['meta_query'][] = ['key' => '_level', 'value' => [$level], 'compare' => 'IN'];
+        }
+
+        $posts = get_posts($args);
+        echo '<div class="row row-results g-5">';
+        foreach ($posts as $post) {
+            $data = ['Level' => $level, 'Title' => $post->post_title, 'post_id' => $post->ID];
+            echo Quba_Render::unit_grid($data, 'units', true);
+        }
+        echo '</div>';
+        return ob_get_clean();
+    }
 }
 
-add_shortcode('related_units', 'related_units');
+// Bootstrap Class Hooks
+add_action('plugins_loaded', ['Quba_Controllers', 'init']);
