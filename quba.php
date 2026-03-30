@@ -3,7 +3,7 @@
 /**
  * Plugin Name: Quba System Integration
  * Description: Integrates QUBA SOAP API, synchronizes units/qualifications via batched processes, and provides custom native templates & meta boxes.
- * Version: 2.3.3
+ * Version: 2.3.4
  * Author: Digitally Disruptive - Donald Raymundo
  * Author URI: https://digitallydisruptive.co.uk/
  * Text Domain: quba-integration
@@ -328,31 +328,17 @@ class Quba_Cron_Sync
 
         $pdfContent = '';
 
+        // Utilizes the explicit endpoint described in QUBA API Docs
         try {
-            $pdf_res = $client->QUBA_GetUnitDocument(['unitID' => $numeric_id]);
-            $pdfContent = $pdf_res->QUBA_GetUnitDocumentResult ?? '';
+            $pdf_res = $client->QUBA_GetUnitContent(['unitID' => $numeric_id]);
+            $pdfContent = $pdf_res->QUBA_GetUnitContentResult ?? '';
         } catch (Exception $e) {
-        }
-
-        if (!$pdfContent) {
-            try {
-                $pdf_res = $client->QUBA_GetUnitListingDocument(['unitID' => $numeric_id]);
-                $pdfContent = $pdf_res->QUBA_GetUnitListingDocumentResult ?? '';
-            } catch (Exception $e) {
-            }
-        }
-
-        if (!$pdfContent) {
-            try {
-                $pdf_res = $client->QUBA_GetUnitListingDocument(['qualificationID' => $numeric_id]);
-                $pdfContent = $pdf_res->QUBA_GetUnitListingDocumentResult ?? '';
-            } catch (Exception $e) {
-            }
+            error_log('QUBA_GetUnitContent API Error: ' . $e->getMessage());
         }
 
         if ($pdfContent) {
-            $url = self::save_pdf_stream($pdfContent, 'units', 'UnitDocument_' . $numeric_id);
-            if ($url) update_post_meta($post_id, '_unit_listing_url', $url);
+            $url = self::save_pdf_stream($pdfContent, 'units/unit-content', 'UnitContent_' . $numeric_id);
+            if ($url) update_post_meta($post_id, '_unit_content_url', $url);
         }
 
         try {
@@ -398,7 +384,6 @@ class Quba_Cron_Sync
     {
         $check_id = 0;
 
-        // Multi-pass legacy deduplication checking
         if ($post_type === 'units') {
             $num_id = $data['ID'] ?? '';
             $alpha_id = $data['ID_Alpha'] ?? '';
@@ -410,7 +395,6 @@ class Quba_Cron_Sync
                 $check_id = Quba_Render::get_post_id_by_meta_field('_id_alpha', $alpha_id);
             }
             if (!$check_id && $alpha_id) {
-                // Legacy catch: carbon fields previously mapped ID_Alpha directly to _id
                 $check_id = Quba_Render::get_post_id_by_meta_field('_id', $alpha_id);
             }
         } else {
@@ -425,7 +409,6 @@ class Quba_Cron_Sync
             $meta_input['_' . strtolower($key)] = $val;
         }
 
-        // Enforce strict DB schemas overrides mapping over legacy data
         if ($post_type === 'units') {
             if (isset($data['ID'])) $meta_input['_id'] = $data['ID'];
             if (isset($data['ID_Alpha'])) $meta_input['_id_alpha'] = $data['ID_Alpha'];
@@ -489,7 +472,7 @@ class Quba_Admin
     {
         if ($hook !== 'tools_page_quba-sync') return;
 
-        wp_enqueue_script('quba-admin-sync', plugin_dir_url(__FILE__) . 'assets/js/admin-sync.js', ['jquery'], '2.3.3', true);
+        wp_enqueue_script('quba-admin-sync', plugin_dir_url(__FILE__) . 'assets/js/admin-sync.js', ['jquery'], '2.3.4', true);
         wp_localize_script('quba-admin-sync', 'qubaAdminAjax', [
             'nonce' => wp_create_nonce('quba_admin_nonce')
         ]);
@@ -609,7 +592,7 @@ class Quba_Admin_Meta
             '_reviewdate' => 'Review Date',
             '_expirydate' => 'End Date',
             '_glh' => 'Guided Learning Hours (GLH)',
-            '_unit_listing_url' => 'Unit Document PDF URL',
+            '_unit_content_url' => 'Unit Content PDF URL',
             '_related_qualifications' => 'Related Qualifications (JSON)'
         ];
 
@@ -1054,8 +1037,8 @@ class Quba_Controllers
             is_post_type_archive('qualifications') || is_post_type_archive('units') ||
             is_singular('qualifications') || is_singular('units') || is_tax('qualifications_cat')
         ) {
-            wp_enqueue_style('quba-main-css', plugin_dir_url(__FILE__) . 'assets/css/main.css', [], '2.3.3', 'all');
-            wp_enqueue_script('quba-main-js', plugin_dir_url(__FILE__) . 'assets/js/main.js', ['jquery'], '2.3.3', true);
+            wp_enqueue_style('quba-main-css', plugin_dir_url(__FILE__) . 'assets/css/main.css', [], '2.3.4', 'all');
+            wp_enqueue_script('quba-main-js', plugin_dir_url(__FILE__) . 'assets/js/main.js', ['jquery'], '2.3.4', true);
             wp_localize_script('quba-main-js', 'qubaAjaxObj', [
                 'ajaxUrl' => admin_url('admin-ajax.php'),
                 'nonce'   => wp_create_nonce('quba_ajax_nonce')
