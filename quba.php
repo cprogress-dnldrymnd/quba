@@ -2,20 +2,20 @@
 
 /**
  * Plugin Name: Quba System Integration
- * Description: Integrates QUBA SOAP API, synchronizes units/qualifications, and provides custom templates.
- * Version: 2.1.0
+ * Description: Integrates QUBA SOAP API, synchronizes units/qualifications via batched processes, and provides custom templates.
+ * Version: 2.2.0
  * Author: Digitally Disruptive - Donald Raymundo
  * Author URI: https://digitallydisruptive.co.uk/
  * Text Domain: quba-integration
  */
 
 if (! defined('ABSPATH')) {
-    exit; // Exit if accessed directly.
+    exit;
 }
 
 /**
  * Class Quba_API
- * Handles all SOAP client connections and raw data retrieval from the QUBA API.
+ * Handles SOAP client connections and data retrieval.
  */
 class Quba_API
 {
@@ -25,7 +25,6 @@ class Quba_API
     {
         if (! self::$soap_client) {
             ini_set('default_socket_timeout', 300);
-            ini_set('max_execution_time', 300);
 
             try {
                 $context = stream_context_create([
@@ -89,226 +88,182 @@ class Quba_API
 
 /**
  * Class Quba_Cron_Sync
- * Orchestrates automated mapping of API data into persistent local WP Post Types.
+ * Orchestrates batched automated mapping of API data into persistent local WP Post Types.
  */
-class Quba_Cron_Sync
+class Quba_Cron_Sync 
 {
-    public static function init()
-    {
-        add_action('quba_daily_sync_event', [__CLASS__, 'run_sync']);
+    public static function init() {
+        // Daily trigger to build the queue
+        add_action('quba_daily_sync_build_queue', [__CLASS__, 'build_sync_queue']);
+        // Frequent trigger to process the queue in small chunks
+        add_action('quba_process_sync_queue', [__CLASS__, 'process_batch_cron']);
     }
 
-    public static function activate()
-    {
-        if (!wp_next_scheduled('quba_daily_sync_event')) {
-            wp_schedule_event(time(), 'daily', 'quba_daily_sync_event');
+    public static function activate() {
+        if (!wp_next_scheduled('quba_daily_sync_build_queue')) {
+            wp_schedule_event(time(), 'daily', 'quba_daily_sync_build_queue');
+        }
+        if (!wp_next_scheduled('quba_process_sync_queue')) {
+            wp_schedule_event(time(), 'hourly', 'quba_process_sync_queue');
         }
     }
 
-    public static function deactivate()
-    {
-        wp_clear_scheduled_hook('quba_daily_sync_event');
+    public static function deactivate() {
+        wp_clear_scheduled_hook('quba_daily_sync_build_queue');
+        wp_clear_scheduled_hook('quba_process_sync_queue');
     }
 
     /**
-     * Internal persistence sequence executed by WP-Cron.
+     * Extracts full API lists and stores them in a transient queue to prevent timeouts.
      */
-    public static function run_sync()
-    {
-        set_time_limit(0);
+    public static function build_sync_queue() {
         $client = Quba_API::get_client();
-        if (!$client) return;
+        if (!$client) return false;
 
-        self::sync_qualifications($client);
-        self::sync_units($client);
-    }
+        $queue = [];
 
-    private static function sync_qualifications($client)
-    {
+        // 1. Fetch Qualifications
         try {
-            $request = [
-                'qualificationID'     => 0,
-                'qualificationTitle'  => '',
-                'qualificationLevel'  => '',
-                'qualificationNumber' => '',
-                'qcaSector'           => '',
-                'provisionType'       => '',
-                'unitID'              => '',
-                'includeHub'          => false,
-                'centreID'            => ''
-            ];
+            $req = ['qualificationID' => 0, 'qualificationTitle' => '', 'qualificationLevel' => '', 'qualificationNumber' => '', 'qcaSector' => '', 'provisionType' => '', 'unitID' => '', 'includeHub' => false, 'centreID' => ''];
+            $res = $client->QUBA_QualificationSearch($req);
+            $xmlString = $res->QUBA_QualificationSearchResult->any ?? '';
+            if ($xmlString) {
+                $xml = new SimpleXMLElement(Quba_API::wrap_soap_envelope('QUBA_QualificationSearch', $xmlString));
+                $quals = $xml->xpath('//QubaQualification');
+                foreach ($quals as $qual) {
+                    $data = [];
+                    foreach ($qual->children() as $child) {
+                        if ($child->getName() != 'Classifications') $data[$child->getName()] = trim((string) $child);
+                    }
+                    if (isset($qual->Classifications->Classification1)) $data['Classification1'] = trim((string) $qual->Classifications->Classification1);
+                    if (isset($qual->Classifications->Classification2)) $data['Classification2'] = trim((string) $qual->Classifications->Classification2);
+                    
+                    $queue[] = ['type' => 'qualifications', 'data' => $data];
+                }
+            }
+        } catch (Exception $e) { error_log('Qual Queue Error: ' . $e->getMessage()); }
 
-            $response = $client->QUBA_QualificationSearch($request);
-            $xmlString = $response->QUBA_QualificationSearchResult->any ?? '';
-            if (!$xmlString) return;
-
-            $xml = new SimpleXMLElement(Quba_API::wrap_soap_envelope('QUBA_QualificationSearch', $xmlString));
-            $qualifications = $xml->xpath('//QubaQualification');
-
-            foreach ($qualifications as $qual) {
-                $data = [];
-                foreach ($qual->children() as $child) {
-                    if ($child->getName() != 'Classifications') {
+        // 2. Fetch Units
+        try {
+            $req = ['unitID' => 0, 'unitIdAlpha' => '', 'unitTitle' => '%', 'allOrPartTitle' => true, 'unitLevel' => '', 'unitCredits' => 0, 'qcaSector' => '', 'learnDirectCode' => '', 'qcaCode' => '', 'unitType' => '', 'provisionType' => '', 'includeHub' => true, 'moduleID' => 0, 'alternativeUnitCode' => ''];
+            $res = $client->QUBA_UnitSearch($req);
+            $xmlString = $res->QUBA_UnitSearchResult->any ?? '';
+            if ($xmlString) {
+                $xml = new SimpleXMLElement(Quba_API::wrap_soap_envelope('QUBA_UnitSearch', $xmlString));
+                $units = $xml->xpath('//QubaUnit');
+                foreach ($units as $unit) {
+                    $data = [];
+                    foreach ($unit->children() as $child) {
                         $data[$child->getName()] = trim((string) $child);
                     }
-                }
-                if (isset($qual->Classifications->Classification1)) {
-                    $data['Classification1'] = trim((string) $qual->Classifications->Classification1);
-                }
-                if (isset($qual->Classifications->Classification2)) {
-                    $data['Classification2'] = trim((string) $qual->Classifications->Classification2);
-                }
-
-                if (isset($data['ID'])) {
-                    $post_id = self::save_post_data($data, 'qualifications');
-
-                    // Documents extraction mapped to strict schema architecture
-                    $req_doc = ['qualificationID' => (int)$data['ID']];
-
-                    // Purpose Statement
-                    try {
-                        $res_doc = $client->QUBA_GetQualificationDocuments($req_doc);
-                        $any_data = $res_doc->QUBA_GetQualificationDocumentsResult->any ?? '';
-                        $pdf_start_pos = strpos($any_data, 'JVBERi0x');
-                        if ($pdf_start_pos !== false) {
-                            $pdf_data = base64_decode(substr($any_data, $pdf_start_pos));
-                            $url = self::store_document($pdf_data, 'qualifications/purpose-statement', 'PurposeStatement_' . $data['ID']);
-                            if ($url) update_post_meta($post_id, '_purpose_statement_url', $url);
-                        }
-                    } catch (Exception $e) {
-                        error_log('Purpose Doc Err: ' . $e->getMessage());
-                    }
-
-                    // Qualification Guide
-                    try {
-                        $res_guide = $client->QUBA_GetQualificationGuide($req_doc);
-                        $pdf_data = $res_guide->QUBA_GetQualificationGuideResult ?? '';
-                        if ($pdf_data) {
-                            $url = self::store_document($pdf_data, 'qualifications/qualification-guide', 'QualificationGuide_' . $data['ID']);
-                            if ($url) update_post_meta($post_id, '_qualification_guide_url', $url);
-                        }
-                    } catch (Exception $e) {
-                        error_log('Guide Doc Err: ' . $e->getMessage());
-                    }
+                    $queue[] = ['type' => 'units', 'data' => $data];
                 }
             }
-        } catch (Exception $e) {
-            error_log('Cron Qual Sync Error: ' . $e->getMessage());
-        }
+        } catch (Exception $e) { error_log('Unit Queue Error: ' . $e->getMessage()); }
+
+        update_option('quba_sync_queue', $queue, false);
+        return count($queue);
     }
 
-    private static function sync_units($client)
-    {
+    /**
+     * Processes chunks of the queue. Can be fired by cron or AJAX.
+     */
+    public static function process_batch($batch_size = 5) {
+        $queue = get_option('quba_sync_queue', []);
+        if (empty($queue)) return 0;
+
+        $client = Quba_API::get_client();
+        if (!$client) return count($queue);
+
+        $batch = array_splice($queue, 0, $batch_size);
+        
+        foreach ($batch as $item) {
+            if ($item['type'] === 'qualifications') {
+                self::process_single_qualification($client, $item['data']);
+            } else {
+                self::process_single_unit($client, $item['data']);
+            }
+        }
+
+        update_option('quba_sync_queue', $queue, false);
+        return count($queue);
+    }
+
+    public static function process_batch_cron() {
+        self::process_batch(20); // Process 20 items per hourly cron run
+    }
+
+    private static function process_single_qualification($client, $data) {
+        if (!isset($data['ID'])) return;
+        $post_id = self::save_post_data($data, 'qualifications');
+        $req_doc = ['qualificationID' => (int)$data['ID']];
+        
         try {
-            $request = [
-                'unitID'              => 0,
-                'unitIdAlpha'         => '',
-                'unitTitle'           => '%',
-                'allOrPartTitle'      => true,
-                'unitLevel'           => '',
-                'unitCredits'         => 0,
-                'qcaSector'           => '',
-                'learnDirectCode'     => '',
-                'qcaCode'             => '',
-                'unitType'            => '',
-                'provisionType'       => '',
-                'includeHub'          => true,
-                'moduleID'            => 0,
-                'alternativeUnitCode' => '',
-            ];
-
-            $response = $client->QUBA_UnitSearch($request);
-            $xmlString = $response->QUBA_UnitSearchResult->any ?? '';
-            if (!$xmlString) return;
-
-            libxml_use_internal_errors(true);
-            $xml = new SimpleXMLElement(Quba_API::wrap_soap_envelope('QUBA_UnitSearch', $xmlString));
-            $units = $xml->xpath('//QubaUnit');
-
-            foreach ($units as $unit) {
-                $data = [];
-                foreach ($unit->children() as $child) {
-                    $data[$child->getName()] = trim((string) $child);
-                }
-
-                if (isset($data['ID_Alpha']) || isset($data['ID'])) {
-                    $post_id = self::save_post_data($data, 'units');
-                    $unit_id = $data['ID_Alpha'] ?? $data['ID'];
-
-                    // Unit Listing Document
-                    try {
-                        $pdf_res = $client->QUBA_GetUnitListingDocument(['qualificationID' => (int) $data['ID']]);
-                        $pdfContent = $pdf_res->QUBA_GetUnitListingDocumentResult ?? '';
-                        if ($pdfContent) {
-                            if (base64_decode($pdfContent, true) !== false) $pdfContent = base64_decode($pdfContent);
-                            $url = self::store_document($pdfContent, 'units/unit-listing', 'UnitListing_' . $unit_id);
-                            if ($url) update_post_meta($post_id, '_unit_listing_url', $url);
-                        }
-                    } catch (Exception $e) {
-                    }
-
-                    // Pre-cache Related Qualifications natively
-                    try {
-                        $qual_req = [
-                            'qualificationID' => 0,
-                            'qualificationTitle' => '',
-                            'qualificationLevel' => '',
-                            'qualificationNumber' => '',
-                            'qcaSector' => '',
-                            'provisionType' => '',
-                            'unitID' => $unit_id,
-                            'includeHub' => false,
-                            'centreID' => ''
-                        ];
-                        $qual_res = $client->QUBA_QualificationSearch($qual_req);
-                        $q_xmlString = $qual_res->QUBA_QualificationSearchResult->any ?? '';
-                        if ($q_xmlString) {
-                            $q_xml = new SimpleXMLElement(Quba_API::wrap_soap_envelope('QUBA_QualificationSearch', $q_xmlString));
-                            $related = $q_xml->xpath('//QubaQualification');
-                            $related_array = [];
-                            foreach ($related as $r_qual) {
-                                $related_array[] = [
-                                    'title'    => (string)$r_qual->Title,
-                                    'code'     => (string)$r_qual->QualificationReferenceNumber,
-                                    'id'       => (string)$r_qual->ID,
-                                    'level'    => (string)$r_qual->Level,
-                                    'credits'  => (string)$r_qual->TotalCreditsRequired,
-                                ];
-                            }
-                            update_post_meta($post_id, '_related_qualifications', $related_array);
-                        }
-                    } catch (Exception $e) {
-                    }
-                }
+            $res_doc = $client->QUBA_GetQualificationDocuments($req_doc);
+            $any_data = $res_doc->QUBA_GetQualificationDocumentsResult->any ?? '';
+            $pdf_start_pos = strpos($any_data, 'JVBERi0x');
+            if ($pdf_start_pos !== false) {
+                $pdf_data = base64_decode(substr($any_data, $pdf_start_pos));
+                $url = self::store_document($pdf_data, 'qualifications/purpose-statement', 'PurposeStatement_' . $data['ID']);
+                if ($url) update_post_meta($post_id, '_purpose_statement_url', $url);
             }
-        } catch (Exception $e) {
-            error_log('Cron Unit Sync Error: ' . $e->getMessage());
-        }
+        } catch (Exception $e) {}
+
+        try {
+            $res_guide = $client->QUBA_GetQualificationGuide($req_doc);
+            $pdf_data = $res_guide->QUBA_GetQualificationGuideResult ?? '';
+            if ($pdf_data) {
+                $url = self::store_document($pdf_data, 'qualifications/qualification-guide', 'QualificationGuide_' . $data['ID']);
+                if ($url) update_post_meta($post_id, '_qualification_guide_url', $url);
+            }
+        } catch (Exception $e) {}
     }
 
-    private static function save_post_data($data, $post_type)
-    {
+    private static function process_single_unit($client, $data) {
+        if (!isset($data['ID_Alpha']) && !isset($data['ID'])) return;
+        $post_id = self::save_post_data($data, 'units');
+        $unit_id = $data['ID_Alpha'] ?? $data['ID'];
+        
+        try {
+            $pdf_res = $client->QUBA_GetUnitListingDocument(['qualificationID' => (int) $data['ID']]);
+            $pdfContent = $pdf_res->QUBA_GetUnitListingDocumentResult ?? '';
+            if ($pdfContent) {
+                if (base64_decode($pdfContent, true) !== false) $pdfContent = base64_decode($pdfContent);
+                $url = self::store_document($pdfContent, 'units/unit-listing', 'UnitListing_' . $unit_id);
+                if ($url) update_post_meta($post_id, '_unit_listing_url', $url);
+            }
+        } catch (Exception $e) {}
+
+        try {
+            $qual_req = ['qualificationID' => 0, 'qualificationTitle' => '', 'qualificationLevel' => '', 'qualificationNumber' => '', 'qcaSector' => '', 'provisionType' => '', 'unitID' => $unit_id, 'includeHub' => false, 'centreID' => ''];
+            $qual_res = $client->QUBA_QualificationSearch($qual_req);
+            $q_xmlString = $qual_res->QUBA_QualificationSearchResult->any ?? '';
+            if ($q_xmlString) {
+                $q_xml = new SimpleXMLElement(Quba_API::wrap_soap_envelope('QUBA_QualificationSearch', $q_xmlString));
+                $related = $q_xml->xpath('//QubaQualification');
+                $related_array = [];
+                foreach ($related as $r_qual) {
+                    $related_array[] = ['title' => (string)$r_qual->Title, 'code' => (string)$r_qual->QualificationReferenceNumber, 'id' => (string)$r_qual->ID, 'level' => (string)$r_qual->Level, 'credits' => (string)$r_qual->TotalCreditsRequired];
+                }
+                update_post_meta($post_id, '_related_qualifications', $related_array);
+            }
+        } catch (Exception $e) {}
+    }
+
+    private static function save_post_data($data, $post_type) {
         $meta_id_key = $post_type === 'units' ? ($data['ID_Alpha'] ?? $data['ID']) : $data['ID'];
         $check_id = Quba_Render::get_post_id_by_meta_field('_id', $meta_id_key);
-
+        
         $post_content = isset($data['QualificationSummary']) ? Quba_Render::santize_html($data['QualificationSummary']) : '';
-        if (empty($post_content) && isset($data['Summary'])) {
-            $post_content = Quba_Render::santize_html($data['Summary']);
-        }
+        if (empty($post_content) && isset($data['Summary'])) $post_content = Quba_Render::santize_html($data['Summary']);
 
         $meta_input = [];
         foreach ($data as $key => $val) {
             $meta_input['_' . strtolower($key)] = $val;
         }
-        $meta_input['_id'] = $meta_id_key; // Enforce explicit master mapping
+        $meta_input['_id'] = $meta_id_key;
 
-        $post_data = [
-            'post_type'    => $post_type,
-            'post_title'   => $data['Title'],
-            'post_status'  => 'publish',
-            'post_content' => $post_content,
-            'meta_input'   => $meta_input
-        ];
+        $post_data = ['post_type' => $post_type, 'post_title' => $data['Title'], 'post_status' => 'publish', 'post_content' => $post_content, 'meta_input' => $meta_input];
 
         if ($check_id) {
             $post_data['ID'] = $check_id;
@@ -319,27 +274,100 @@ class Quba_Cron_Sync
         }
     }
 
-    private static function store_document($file_data, $path_suffix, $filename)
-    {
+    private static function store_document($file_data, $path_suffix, $filename) {
         $upload_dir = wp_upload_dir();
         $target_dir = $upload_dir['basedir'] . '/documents/' . $path_suffix;
         $target_url = $upload_dir['baseurl'] . '/documents/' . $path_suffix;
 
-        if (!file_exists($target_dir)) {
-            wp_mkdir_p($target_dir);
-        }
+        if (!file_exists($target_dir)) wp_mkdir_p($target_dir);
 
         $filepath = $target_dir . '/' . $filename . '.pdf';
-        if (file_put_contents($filepath, $file_data) !== false) {
-            return $target_url . '/' . $filename . '.pdf';
-        }
+        if (file_put_contents($filepath, $file_data) !== false) return $target_url . '/' . $filename . '.pdf';
         return false;
     }
 }
 
 /**
+ * Class Quba_Admin
+ * Manages the backend UI for manual synchronization.
+ */
+class Quba_Admin 
+{
+    public static function init() {
+        add_action('admin_menu', [__CLASS__, 'register_menu']);
+        add_action('admin_enqueue_scripts', [__CLASS__, 'enqueue_admin_scripts']);
+        
+        // AJAX Endpoints for Manual Sync
+        add_action('wp_ajax_quba_init_sync', [__CLASS__, 'ajax_init_sync']);
+        add_action('wp_ajax_quba_process_batch', [__CLASS__, 'ajax_process_batch']);
+    }
+
+    public static function register_menu() {
+        add_submenu_page(
+            'tools.php',
+            'QUBA Data Sync',
+            'QUBA Sync',
+            'manage_options',
+            'quba-sync',
+            [__CLASS__, 'render_admin_page']
+        );
+    }
+
+    public static function enqueue_admin_scripts($hook) {
+        if ($hook !== 'tools_page_quba-sync') return;
+        
+        wp_enqueue_script('quba-admin-sync', plugin_dir_url(__FILE__) . 'assets/js/admin-sync.js', ['jquery'], '2.2.0', true);
+        wp_localize_script('quba-admin-sync', 'qubaAdminAjax', [
+            'nonce' => wp_create_nonce('quba_admin_nonce')
+        ]);
+    }
+
+    public static function render_admin_page() {
+        ?>
+        <div class="wrap">
+            <h1>QUBA Manual Synchronization</h1>
+            <p>Use this tool to manually trigger a full synchronization of Qualifications and Units from the QUBA SOAP API.</p>
+            
+            <div style="background: #fff; padding: 20px; border: 1px solid #ccd0d4; max-width: 600px; margin-top: 20px;">
+                <button id="quba-start-sync" class="button button-primary button-large">Start Manual Sync</button>
+                
+                <div style="margin-top: 20px;">
+                    <strong>Status:</strong> <span id="quba-sync-status">Idle. Ready to sync.</span>
+                </div>
+
+                <div style="width: 100%; background-color: #f0f0f1; border-radius: 3px; margin-top: 15px; height: 30px; border: 1px solid #c3c4c7; overflow: hidden;">
+                    <div id="quba-sync-progress-bar" style="width: 0%; height: 100%; background-color: #2271b1; transition: width 0.3s ease; text-align: center; color: white; line-height: 30px; font-weight: bold;">0%</div>
+                </div>
+            </div>
+        </div>
+        <?php
+    }
+
+    public static function ajax_init_sync() {
+        check_ajax_referer('quba_admin_nonce', 'nonce');
+        if (!current_user_can('manage_options')) wp_send_json_error('Unauthorized');
+
+        // Trigger queue build
+        $total = Quba_Cron_Sync::build_sync_queue();
+        
+        if ($total === false) wp_send_json_error('Failed to connect to QUBA API.');
+        wp_send_json_success(['total' => $total]);
+    }
+
+    public static function ajax_process_batch() {
+        check_ajax_referer('quba_admin_nonce', 'nonce');
+        if (!current_user_can('manage_options')) wp_send_json_error('Unauthorized');
+
+        // Process chunk (5 items at a time for safety)
+        $remaining = Quba_Cron_Sync::process_batch(5);
+        wp_send_json_success(['remaining' => $remaining]);
+    }
+}
+
+
+/**
  * Class Quba_Render
- * Manages the generation of UI HTML. Decoupled from logic parsing.
+ * Manages the generation of UI HTML.
  */
 class Quba_Render
 {
@@ -354,7 +382,7 @@ class Quba_Render
         } else {
             $level_val = str_replace('L', ' Level ', $level);
         }
-?>
+        ?>
         <div class="col-lg-4 post-item">
             <div class="post-box h-100">
                 <div class="image-box image-box-placeholder">
@@ -383,7 +411,7 @@ class Quba_Render
                 </div>
             </div>
         </div>
-<?php
+        <?php
         return ob_get_clean();
     }
 
@@ -447,8 +475,8 @@ class Quba_Controllers
             is_post_type_archive('qualifications') || is_post_type_archive('units') ||
             is_singular('qualifications') || is_singular('units') || is_tax('qualifications_cat')
         ) {
-            wp_enqueue_style('quba-main-css', plugin_dir_url(__FILE__) . 'assets/css/main.css', [], '2.1.0', 'all');
-            wp_enqueue_script('quba-main-js', plugin_dir_url(__FILE__) . 'assets/js/main.js', ['jquery'], '2.1.0', true);
+            wp_enqueue_style('quba-main-css', plugin_dir_url(__FILE__) . 'assets/css/main.css', [], '2.2.0', 'all');
+            wp_enqueue_script('quba-main-js', plugin_dir_url(__FILE__) . 'assets/js/main.js', ['jquery'], '2.2.0', true);
             wp_localize_script('quba-main-js', 'qubaAjaxObj', [
                 'ajaxUrl' => admin_url('admin-ajax.php'),
                 'nonce'   => wp_create_nonce('quba_ajax_nonce')
@@ -476,9 +504,6 @@ class Quba_Controllers
         return $template;
     }
 
-    /**
-     * WP_Query translation of API payload inputs enforcing local DB fetches
-     */
     public static function archive_ajax_qualifications()
     {
         $args = [
@@ -505,7 +530,7 @@ class Quba_Controllers
         }
 
         $query = new WP_Query($args);
-
+        
         if ($query->have_posts()) {
             echo '<div class="search-results-summary mb-4"><div class="results-count-display">';
             echo '<span class="results-number">' . number_format($query->found_posts) . '</span>';
@@ -553,7 +578,7 @@ class Quba_Controllers
         }
 
         $query = new WP_Query($args);
-
+        
         if ($query->have_posts()) {
             echo '<div class="search-results-summary mb-4"><div class="results-count-display">';
             echo '<span class="results-number">' . number_format($query->found_posts) . '</span>';
@@ -622,6 +647,7 @@ class Quba_Controllers
 
 // Bootstrap
 Quba_Cron_Sync::init();
+Quba_Admin::init();
 register_activation_hook(__FILE__, ['Quba_Cron_Sync', 'activate']);
 register_deactivation_hook(__FILE__, ['Quba_Cron_Sync', 'deactivate']);
 add_action('plugins_loaded', ['Quba_Controllers', 'init']);
