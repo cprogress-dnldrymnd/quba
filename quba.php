@@ -448,7 +448,7 @@ class Quba_Render
             $post_id = $data['post_id'];
         }
 
-        $icon = '<i class="fa fa-check" aria-hidden="true"></i>';
+        $icon = '&#10004;';
         if (in_array($data['Level'] ?? '', ['E1', 'E2', 'E3'])) {
             $level_val = str_replace('E', $icon . ' Entry Level ', $data['Level']);
         } else {
