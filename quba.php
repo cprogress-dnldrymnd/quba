@@ -646,7 +646,7 @@ class Quba_Data_Sync
 
 /**
  * Class Quba_Controllers
- * * Intercepts WP actions (Shortcodes, Hooks, AJAX).
+ * * Intercepts WP actions (Shortcodes, Hooks, AJAX, and Asset Enqueuing).
  */
 class Quba_Controllers
 {
@@ -656,6 +656,9 @@ class Quba_Controllers
      */
     public static function init()
     {
+        // Asset Enqueuing
+        add_action('wp_enqueue_scripts', [__CLASS__, 'enqueue_assets']);
+
         // AJAX Endpoints
         add_action('wp_ajax_nopriv_archive_ajax_qualifications', [__CLASS__, 'archive_ajax_qualifications']);
         add_action('wp_ajax_archive_ajax_qualifications', [__CLASS__, 'archive_ajax_qualifications']);
@@ -672,6 +675,41 @@ class Quba_Controllers
 
         // Template Overrides (Addresses Woocommerce/Theme intercepts requirements)
         add_filter('template_include', [__CLASS__, 'route_templates'], 99);
+    }
+
+    /**
+     * Enqueues frontend scripts and styles securely.
+     * Restricts asset loading strictly to our custom post type archives and singles 
+     * to optimize global page load speeds.
+     */
+    public static function enqueue_assets()
+    {
+        // Only load the script if we are on the relevant templates
+        if (
+            is_post_type_archive('qualifications') || is_post_type_archive('units') ||
+            is_singular('qualifications') || is_singular('units') || is_tax('qualifications_cat')
+        ) {
+
+            // Enqueue main.js file
+            wp_enqueue_script(
+                'quba-main-js',
+                plugin_dir_url(__FILE__) . 'assets/js/main.js',
+                ['jquery'], // Dependency: ensures jQuery is loaded first
+                '2.0.0',      // Versioning for cache-busting
+                true          // Load in the footer to prevent render-blocking
+            );
+
+            // Localize script to pass the WP AJAX URL to the external main.js file
+            // You can access this in main.js via: qubaAjaxObj.ajaxUrl
+            wp_localize_script(
+                'quba-main-js',
+                'qubaAjaxObj',
+                [
+                    'ajaxUrl' => admin_url('admin-ajax.php'),
+                    'nonce'   => wp_create_nonce('quba_ajax_nonce') // Optional: Added for future secure nonce validation
+                ]
+            );
+        }
     }
 
     /**

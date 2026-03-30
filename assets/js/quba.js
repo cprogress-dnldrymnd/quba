@@ -53,7 +53,7 @@ function quba_ajax_qualifications($offset, $source = 'quba', $event_type = 'html
 
         type: "POST",
 
-        url: "/wp-admin/admin-ajax.php",
+        url: qubaAjaxObj.ajaxUrl,
 
         data: {
             action: 'archive_quba_ajax_qualifications',
@@ -122,7 +122,7 @@ function quba_ajax_units($offset, $source = 'quba', $event_type = 'html') {
 
         type: "POST",
 
-        url: "/wp-admin/admin-ajax.php",
+        url: qubaAjaxObj.ajaxUrl,
 
         data: {
             action: 'archive_quba_ajax_units',
