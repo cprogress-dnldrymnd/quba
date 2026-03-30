@@ -12,7 +12,58 @@
 if (! defined('ABSPATH')) {
     exit;
 }
+/**
+ * Retrieves a list of 'units' posts that possess a non-empty '_related_qualifications' meta value.
+ *
+ * This function utilizes WP_Query with a targeted meta_query clause. It explicitly 
+ * filters out posts where the target meta key either doesn't exist or is stored as 
+ * an empty string in the database schema.
+ *
+ * @param int $posts_per_page The number of posts to retrieve. Defaults to -1 (unlimited).
+ * @return WP_Post[] Array of instantiated post objects matching the criteria.
+ */
+function get_units_with_qualifications( int $posts_per_page = -1 ): array {
+    
+    // Define the strict query parameters for the database transaction.
+    $args = [
+        'post_type'      => 'units',
+        'posts_per_page' => $posts_per_page,
+        'post_status'    => 'publish',
+        // By skipping 'no_found_rows' => true, we allow pagination. Set to true if pagination isn't needed for performance.
+        'meta_query'     => [
+            [
+                'key'     => '_related_qualifications',
+                'value'   => '',
+                'compare' => '!=', // Evaluates against an empty string to ensure genuine data presence.
+            ],
+        ],
+    ];
 
+    // Execute the object query.
+    $unit_query = new WP_Query( $args );
+
+    // Extract and return the array of post objects, returning an empty array if the query is hollow.
+    return $unit_query->posts;
+}
+
+/**
+ * Example execution wrapper to demonstrate iteration.
+ * * @return void
+ */
+function display_qualified_units(): void {
+    $units = get_units_with_qualifications();
+
+    if ( empty( $units ) ) {
+        return 'n/a';
+    }
+
+    foreach ( $units as $unit ) {
+       echo $unit->post_title;
+       echo '<br>';
+    }
+}
+
+add_shortcode('display_qualified_units', 'display_qualified_units');
 /**
  * Class Quba_API
  * Handles SOAP client connections and data retrieval.
