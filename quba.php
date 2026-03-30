@@ -62,6 +62,7 @@ function display_qualified_units(){
        echo $unit->post_title;
        echo '<br>';
     }
+    var_dump(get_post_meta(93938));
     return ob_get_clean();
 }
 
