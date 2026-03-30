@@ -44,7 +44,7 @@ jQuery(document).ready(function ($) {
             // Update state attributes and UI classes
             $('#qualification-filter').attr('search_type', postType);
             $('.qualification-filter-holder').addClass('searching');
-            
+
             $('.filter-button').removeClass('filter-active');
             $this.parent().addClass('filter-active');
 
@@ -74,28 +74,28 @@ jQuery(document).ready(function ($) {
         // Construct payload from visible/active DOM elements
         var searchData = {
             action: actionName,
-            source: 'quba', 
+            source: 'quba',
             nonce: qubaAjaxObj.nonce, // Security token
 
             // Text Inputs (Shared or distinct mapped to their API param expectations)
-            qualificationTitle:  $('input[name="Title"]').val(),
-            unitTitle:           $('input[name="Title"]').val(), 
+            qualificationTitle: $('input[name="Title"]').val(),
+            unitTitle: $('input[name="Title"]').val(),
             qualificationNumber: $('input[name="qualificationNumber"]').val(),
-            qcaCode:             $('input[name="qcaCode"]').val(),
-            unitID:              $('input[name="unitID"]').val() || $('input[name="open_awards_unit_id"]').val(),
+            qcaCode: $('input[name="qcaCode"]').val(),
+            unitID: $('input[name="unitID"]').val() || $('input[name="open_awards_unit_id"]').val(),
 
             // Select Dropdowns
-            qualificationLevel:  $('#level').val(),
-            unitLevel:           $('#level').val(),
-            qcaSector:           $('#qcaSector').val(),
-            qualificationType:   $('#type').val(),
-            unitType:            $('#unitType').val()
+            qualificationLevel: $('#level').val(),
+            unitLevel: $('#level').val(),
+            qcaSector: $('#qcaSector').val(),
+            qualificationType: $('#type').val(),
+            unitType: $('#unitType').val()
         };
 
         // UI Loading State
         var $resultsHolder = $('.results-holder');
         var $spinner = $('.spinner-holder');
-        
+
         $spinner.show();
         $resultsHolder.fadeTo(200, 0.4);
 
@@ -117,11 +117,44 @@ jQuery(document).ready(function ($) {
         });
     }
 
+    document.addEventListener('DOMContentLoaded', function () {
+        const qualificationHeaders = document.querySelectorAll('.qualification-header');
+        document.getElementById("glh").value = ""
+        document.getElementById("tqt").value = ""
+        qualificationHeaders.forEach(header => {
+            header.addEventListener('click', function () {
+                // Get parent box and its elements
+                const box = this.parentElement;
+                const expandBtn = this.querySelector('.expand-btn');
+                const details = box.querySelector('.qualification-details');
+
+                // Toggle the expanded state
+                const isExpanded = box.classList.contains('expanded');
+
+                // First close all boxes
+                document.querySelectorAll('.qualification-box').forEach(item => {
+                    item.classList.remove('expanded');
+                    const itemBtn = item.querySelector('.expand-btn');
+                    if (itemBtn) itemBtn.textContent = '+';
+                    const itemDetails = item.querySelector('.qualification-details');
+                    if (itemDetails) itemDetails.style.display = 'none';
+                });
+
+                // Then open this one if it wasn't already open
+                if (!isExpanded) {
+                    box.classList.add('expanded');
+                    expandBtn.textContent = '−';
+                    details.style.display = 'block';
+                }
+            });
+        });
+    });
+
     /**
      * Trigger initial load on document ready ONLY if we are on the Archive page.
      * We verify this by checking if the #qualification-filter container exists in the DOM.
      */
     if ($('#qualification-filter').length > 0) {
-        performSearch(); 
+        performSearch();
     }
 });
