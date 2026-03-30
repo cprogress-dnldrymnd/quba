@@ -1150,7 +1150,7 @@ class Quba_Controllers
 
         $args = [
             'post_type'      => 'units',
-            'posts_per_page' => 20,
+            'posts_per_page' => 21,
             'paged'          => $paged,
             'post_status'    => 'publish',
             'meta_query'     => ['relation' => 'AND']
