@@ -3,7 +3,7 @@
 /**
  * Plugin Name: Quba System Integration
  * Description: Integrates QUBA SOAP API, synchronizes units/qualifications via batched processes, and provides custom native templates & meta boxes.
- * Version: 2.3.4
+ * Version: 2.4.0
  * Author: Digitally Disruptive - Donald Raymundo
  * Author URI: https://digitallydisruptive.co.uk/
  * Text Domain: quba-integration
@@ -114,7 +114,7 @@ class Quba_Cron_Sync
         wp_clear_scheduled_hook('quba_process_sync_queue');
     }
 
-    public static function build_sync_queue($sync_type = 'both')
+    public static function build_sync_queue($sync_type = 'both', $specific_id = 0)
     {
         $client = Quba_API::get_client();
         if (!$client) return false;
@@ -122,26 +122,32 @@ class Quba_Cron_Sync
         $queue = [];
         $processed_quals = [];
         $processed_units = [];
+        $specific_id = (int) $specific_id;
 
+        // --- 1. QUALIFICATIONS EXTRACTION ---
         if ($sync_type === 'both' || $sync_type === 'qualifications') {
-            $sectors = Quba_API::get_qca_sectors();
             $search_queries = [];
 
-            if (!is_wp_error($sectors) && !($sectors instanceof Exception) && !empty($sectors)) {
-                foreach ($sectors as $sector) {
-                    $search_queries[] = ['qcaSector' => (string)$sector->Code, 'qualificationTitle' => ''];
+            if ($specific_id > 0) {
+                // If targeting a specific ID, bypass extraction loops completely
+                $search_queries[] = ['qcaSector' => '', 'qualificationTitle' => '', 'qualificationID' => $specific_id];
+            } else {
+                $sectors = Quba_API::get_qca_sectors();
+                if (!is_wp_error($sectors) && !($sectors instanceof Exception) && !empty($sectors)) {
+                    foreach ($sectors as $sector) {
+                        $search_queries[] = ['qcaSector' => (string)$sector->Code, 'qualificationTitle' => '', 'qualificationID' => 0];
+                    }
                 }
-            }
-
-            $wildcards = ['%', 'a', 'e', 'i', 'o', 'u'];
-            foreach ($wildcards as $char) {
-                $search_queries[] = ['qcaSector' => '', 'qualificationTitle' => $char];
+                $wildcards = ['%', 'a', 'e', 'i', 'o', 'u'];
+                foreach ($wildcards as $char) {
+                    $search_queries[] = ['qcaSector' => '', 'qualificationTitle' => $char, 'qualificationID' => 0];
+                }
             }
 
             foreach ($search_queries as $sq) {
                 try {
                     $req = [
-                        'qualificationID'     => 0,
+                        'qualificationID'     => $sq['qualificationID'],
                         'qualificationTitle'  => $sq['qualificationTitle'],
                         'qualificationLevel'  => '',
                         'qualificationNumber' => '',
@@ -182,18 +188,19 @@ class Quba_Cron_Sync
                         }
                     }
                 } catch (Exception $e) {
-                    error_log('Qual Queue Error on Sector/Char (' . $sq['qcaSector'] . $sq['qualificationTitle'] . '): ' . $e->getMessage());
+                    error_log('Qual Queue Error: ' . $e->getMessage());
                     continue;
                 }
             }
         }
 
+        // --- 2. UNITS EXTRACTION ---
         if ($sync_type === 'both' || $sync_type === 'units') {
             try {
                 $req = [
-                    'unitID'              => 0,
+                    'unitID'              => $specific_id > 0 ? $specific_id : 0,
                     'unitIdAlpha'         => '',
-                    'unitTitle'           => '%',
+                    'unitTitle'           => $specific_id > 0 ? '' : '%', // Remove wildcard constraints if querying an ID
                     'allOrPartTitle'      => true,
                     'unitLevel'           => '',
                     'unitCredits'         => 0,
@@ -328,7 +335,6 @@ class Quba_Cron_Sync
 
         $pdfContent = '';
 
-        // Utilizes the explicit endpoint described in QUBA API Docs
         try {
             $pdf_res = $client->QUBA_GetUnitContent(['unitID' => $numeric_id]);
             $pdfContent = $pdf_res->QUBA_GetUnitContentResult ?? '';
@@ -472,7 +478,7 @@ class Quba_Admin
     {
         if ($hook !== 'tools_page_quba-sync') return;
 
-        wp_enqueue_script('quba-admin-sync', plugin_dir_url(__FILE__) . 'assets/js/admin-sync.js', ['jquery'], '2.3.4', true);
+        wp_enqueue_script('quba-admin-sync', plugin_dir_url(__FILE__) . 'assets/js/admin-sync.js', ['jquery'], '2.4.0', true);
         wp_localize_script('quba-admin-sync', 'qubaAdminAjax', [
             'nonce' => wp_create_nonce('quba_admin_nonce')
         ]);
@@ -488,10 +494,16 @@ class Quba_Admin
             <div style="background: #fff; padding: 20px; border: 1px solid #ccd0d4; max-width: 600px; margin-top: 20px;">
 
                 <div style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-left: 4px solid #2271b1;">
-                    <label style="display: block; font-size: 14px; margin-bottom: 10px;"><strong>Select Data Entity to Synchronize:</strong></label>
+                    <label style="display: block; font-size: 14px; margin-bottom: 10px;"><strong>1. Select Data Entity to Synchronize:</strong></label>
                     <label style="display: block; margin-bottom: 8px;"><input type="radio" name="quba_sync_type" value="both" checked> Both (Qualifications & Units)</label>
                     <label style="display: block; margin-bottom: 8px;"><input type="radio" name="quba_sync_type" value="qualifications"> Qualifications Only</label>
-                    <label style="display: block;"><input type="radio" name="quba_sync_type" value="units"> Units Only</label>
+                    <label style="display: block; margin-bottom: 15px;"><input type="radio" name="quba_sync_type" value="units"> Units Only</label>
+
+                    <hr style="border-top: 1px solid #ddd; margin-bottom: 15px;">
+
+                    <label style="display: block; font-size: 14px; margin-bottom: 10px;"><strong>2. Optional: Sync Specific Target ID</strong></label>
+                    <input type="number" id="quba_sync_specific_id" placeholder="Enter Numeric _id" style="width: 100%; max-width: 300px;">
+                    <p class="description" style="font-size: 12px; color: #666; margin-top: 5px;">Leave blank to run a full synchronization. If you enter an ID here, the tool will instantly bypass the extraction loops and sync exclusively that single item.</p>
                 </div>
 
                 <button id="quba-start-sync" class="button button-primary button-large">Start Manual Sync</button>
@@ -514,7 +526,9 @@ class Quba_Admin
         if (!current_user_can('manage_options')) wp_send_json_error('Unauthorized');
 
         $sync_type = isset($_POST['sync_type']) ? sanitize_text_field($_POST['sync_type']) : 'both';
-        $total = Quba_Cron_Sync::build_sync_queue($sync_type);
+        $specific_id = isset($_POST['specific_id']) ? intval($_POST['specific_id']) : 0;
+
+        $total = Quba_Cron_Sync::build_sync_queue($sync_type, $specific_id);
 
         if ($total === false) wp_send_json_error('Failed to connect to QUBA API.');
         wp_send_json_success(['total' => $total]);
@@ -1037,8 +1051,8 @@ class Quba_Controllers
             is_post_type_archive('qualifications') || is_post_type_archive('units') ||
             is_singular('qualifications') || is_singular('units') || is_tax('qualifications_cat')
         ) {
-            wp_enqueue_style('quba-main-css', plugin_dir_url(__FILE__) . 'assets/css/main.css', [], '2.3.4', 'all');
-            wp_enqueue_script('quba-main-js', plugin_dir_url(__FILE__) . 'assets/js/main.js', ['jquery'], '2.3.4', true);
+            wp_enqueue_style('quba-main-css', plugin_dir_url(__FILE__) . 'assets/css/main.css', [], '2.4.0', 'all');
+            wp_enqueue_script('quba-main-js', plugin_dir_url(__FILE__) . 'assets/js/main.js', ['jquery'], '2.4.0', true);
             wp_localize_script('quba-main-js', 'qubaAjaxObj', [
                 'ajaxUrl' => admin_url('admin-ajax.php'),
                 'nonce'   => wp_create_nonce('quba_ajax_nonce')
