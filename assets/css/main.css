@@ -16,3 +16,61 @@
 .level-badge img {
     position: static !important;
 }
+
+.search-results-count-wrapper {
+    margin: 20px 0;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border-left: 4px solid #007cba;
+}
+
+.search-results-count {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.count-display {
+    font-size: 16px;
+    font-weight: 500;
+}
+
+.results-number {
+    color: #007cba;
+    font-weight: bold;
+    font-size: 18px;
+}
+
+.results-text {
+    color: #666;
+    margin-left: 5px;
+}
+
+.search-term {
+    color: #333;
+    font-style: italic;
+    margin-left: 5px;
+}
+
+.active-filters {
+    color: #666;
+    margin-top: 5px;
+}
+
+.search-results-info .alert {
+    margin-bottom: 0;
+    padding: 12px 20px;
+}
+
+@media (max-width: 768px) {
+    .search-results-count {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .count-display {
+        margin-bottom: 10px;
+    }
+}
