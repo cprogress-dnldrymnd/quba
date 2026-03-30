@@ -740,20 +740,27 @@ class Quba_Controllers
      */
     public static function archive_ajax_qualifications()
     {
-        $source = isset($_POST['source']) ? sanitize_text_field($_POST['source']) : '';
+        $source = isset($_POST['source']) && $_POST['source'] != '' ? sanitize_text_field($_POST['source']) : '';
+
+        /**
+         * The QUBA API requires at least one parameter to be supplied to avoid the QUBA_UB003 error.
+         * We restore the original fallback behavior: defaulting Title to 'e' and Level to ' ' 
+         * which acts as a wildcard on initial page load when no filters are active.
+         */
         $data = [
-            'qualificationLevel'  => sanitize_text_field($_POST['qualificationLevel'] ?? ''),
-            'qcaSector'           => sanitize_text_field($_POST['qcaSector'] ?? ''),
-            'qualificationNumber' => sanitize_text_field($_POST['qualificationNumber'] ?? ''),
-            'qualificationTitle'  => sanitize_text_field($_POST['qualificationTitle'] ?? ''),
-            'qualificationType'   => sanitize_text_field($_POST['qualificationType'] ?? ''),
+            'qualificationLevel'  => isset($_POST['qualificationLevel']) && $_POST['qualificationLevel'] !== '' ? sanitize_text_field($_POST['qualificationLevel']) : ' ',
+            'qcaSector'           => isset($_POST['qcaSector']) && $_POST['qcaSector'] !== '' ? sanitize_text_field($_POST['qcaSector']) : '',
+            'qualificationNumber' => isset($_POST['qualificationNumber']) && $_POST['qualificationNumber'] !== '' ? sanitize_text_field($_POST['qualificationNumber']) : '',
+            'qualificationTitle'  => isset($_POST['qualificationTitle']) && $_POST['qualificationTitle'] !== '' ? sanitize_text_field($_POST['qualificationTitle']) : 'e',
+            'qualificationType'   => isset($_POST['qualificationType']) && $_POST['qualificationType'] !== '' ? sanitize_text_field($_POST['qualificationType']) : '',
         ];
 
-        if ($source == 'quba') {
+        if ($source === 'quba') {
             echo Quba_API::qualification_search($data);
         } else {
             echo Quba_API::qualification_search_post();
         }
+
         wp_die();
     }
 
