@@ -3,7 +3,7 @@
 /**
  * Plugin Name: Quba System Integration
  * Description: Integrates QUBA SOAP API, synchronizes units/qualifications via batched processes, and provides custom native templates & meta boxes.
- * Version: 2.3.1
+ * Version: 2.3.2
  * Author: Digitally Disruptive - Donald Raymundo
  * Author URI: https://digitallydisruptive.co.uk/
  * Text Domain: quba-integration
@@ -19,13 +19,8 @@ if (! defined('ABSPATH')) {
  */
 class Quba_API
 {
-    /** @var SoapClient|null Singleton instance of the SOAP client. */
     private static $soap_client = null;
 
-    /**
-     * Initializes and returns the QUBA SOAP client.
-     * @return SoapClient|false Returns the SoapClient instance or false on failure.
-     */
     public static function get_client()
     {
         if (! self::$soap_client) {
@@ -58,10 +53,6 @@ class Quba_API
         return self::$soap_client;
     }
 
-    /**
-     * Retrieves QCA Sectors from the API.
-     * @return SimpleXMLElement|Exception array of sectors or Exception on failure.
-     */
     public static function get_qca_sectors()
     {
         try {
@@ -79,12 +70,6 @@ class Quba_API
         }
     }
 
-    /**
-     * Internal helper to wrap raw XML in a SOAP Envelope for parsing.
-     * @param string $action SOAP Action namespace string.
-     * @param string $xmlString Raw inner XML data.
-     * @return string Formatted complete SOAP XML.
-     */
     public static function wrap_soap_envelope($action, $xmlString)
     {
         $xmlString = $xmlString ? $xmlString : '';
@@ -107,18 +92,12 @@ class Quba_API
  */
 class Quba_Cron_Sync
 {
-    /**
-     * Registers cron event hooks for background processing.
-     */
     public static function init()
     {
         add_action('quba_daily_sync_build_queue', [__CLASS__, 'build_sync_queue']);
         add_action('quba_process_sync_queue', [__CLASS__, 'process_batch_cron']);
     }
 
-    /**
-     * Schedules the cron events upon plugin activation.
-     */
     public static function activate()
     {
         if (!wp_next_scheduled('quba_daily_sync_build_queue')) {
@@ -129,20 +108,12 @@ class Quba_Cron_Sync
         }
     }
 
-    /**
-     * Clears scheduled cron events upon plugin deactivation.
-     */
     public static function deactivate()
     {
         wp_clear_scheduled_hook('quba_daily_sync_build_queue');
         wp_clear_scheduled_hook('quba_process_sync_queue');
     }
 
-    /**
-     * Extracts full API lists via an extraction matrix and stores them in a transient queue.
-     * @param string $sync_type The targeted data type to sync ('both', 'qualifications', 'units'). Defaults to 'both'.
-     * @return int|bool Returns the total count of items queued, or false if the client fails to instantiate.
-     */
     public static function build_sync_queue($sync_type = 'both')
     {
         $client = Quba_API::get_client();
@@ -202,7 +173,6 @@ class Quba_Cron_Sync
                                     $data['Classification2'] = trim((string) $qual->Classifications->Classification2);
                                 }
 
-                                // Strict Numeric Enforcement for Deduplication Mapping
                                 $id = $data['ID'] ?? '';
                                 if ($id && !isset($processed_quals[$id])) {
                                     $processed_quals[$id] = true;
@@ -250,7 +220,6 @@ class Quba_Cron_Sync
                                 $data[$child->getName()] = trim((string) $child);
                             }
 
-                            // Strict Numeric Enforcement for Deduplication Mapping
                             $id = $data['ID'] ?? '';
                             if ($id && !isset($processed_units[$id])) {
                                 $processed_units[$id] = true;
@@ -268,11 +237,6 @@ class Quba_Cron_Sync
         return count($queue);
     }
 
-    /**
-     * Processes chunks of the queue. Can be fired by cron or AJAX.
-     * @param int $batch_size The volume of items to process in a single execution thread.
-     * @return int The remaining count of items in the queue.
-     */
     public static function process_batch($batch_size = 5)
     {
         $queue = get_option('quba_sync_queue', []);
@@ -295,19 +259,52 @@ class Quba_Cron_Sync
         return count($queue);
     }
 
-    /**
-     * Triggered strictly by the background WP-Cron engine.
-     */
     public static function process_batch_cron()
     {
         self::process_batch(20);
     }
 
     /**
-     * Maps an individual qualification dataset to the WP DB and requests related documents.
-     * @param SoapClient $client The active SOAP endpoint instance.
-     * @param array $data The mapped XML entity parameters.
+     * Safely decodes mixed-state binary, base64, or XML-embedded base64 streams into valid PDF files.
      */
+    private static function save_pdf_stream($base_content, $path_suffix, $filename)
+    {
+        if (empty($base_content) || !is_string($base_content)) return false;
+
+        $pdf_binary = '';
+
+        // 1. Check if it's already a native binary PDF
+        if (strpos($base_content, '%PDF') === 0) {
+            $pdf_binary = $base_content;
+        }
+        // 2. Check if it's a pure base64 encoded string
+        else {
+            $decoded = base64_decode($base_content, true);
+            if ($decoded !== false && strpos($decoded, '%PDF') === 0) {
+                $pdf_binary = $decoded;
+            }
+            // 3. Check if it's embedded within an XML wrapper
+            else {
+                $pos = strpos($base_content, 'JVBERi0x'); // JVBERi0x is base64 for '%PDF-1.'
+                if ($pos !== false) {
+                    $pdf_binary = base64_decode(substr($base_content, $pos));
+                }
+            }
+        }
+
+        if ($pdf_binary) {
+            return self::store_document($pdf_binary, $path_suffix, $filename);
+        }
+
+        // 4. Final aggressive fallback for non-strict base64 payloads
+        $aggressive_decode = base64_decode($base_content);
+        if ($aggressive_decode && strpos($aggressive_decode, '%PDF') === 0) {
+            return self::store_document($aggressive_decode, $path_suffix, $filename);
+        }
+
+        return false;
+    }
+
     private static function process_single_qualification($client, $data)
     {
         if (!isset($data['ID'])) return;
@@ -317,31 +314,20 @@ class Quba_Cron_Sync
         try {
             $res_doc = $client->QUBA_GetQualificationDocuments($req_doc);
             $any_data = $res_doc->QUBA_GetQualificationDocumentsResult->any ?? '';
-            $pdf_start_pos = strpos($any_data, 'JVBERi0x');
-            if ($pdf_start_pos !== false) {
-                $pdf_data = base64_decode(substr($any_data, $pdf_start_pos));
-                $url = self::store_document($pdf_data, 'qualifications/purpose-statement', 'PurposeStatement_' . $data['ID']);
-                if ($url) update_post_meta($post_id, '_purpose_statement_url', $url);
-            }
+            $url = self::save_pdf_stream($any_data, 'qualifications/purpose-statement', 'PurposeStatement_' . $data['ID']);
+            if ($url) update_post_meta($post_id, '_purpose_statement_url', $url);
         } catch (Exception $e) {
         }
 
         try {
             $res_guide = $client->QUBA_GetQualificationGuide($req_doc);
             $pdf_data = $res_guide->QUBA_GetQualificationGuideResult ?? '';
-            if ($pdf_data) {
-                $url = self::store_document($pdf_data, 'qualifications/qualification-guide', 'QualificationGuide_' . $data['ID']);
-                if ($url) update_post_meta($post_id, '_qualification_guide_url', $url);
-            }
+            $url = self::save_pdf_stream($pdf_data, 'qualifications/qualification-guide', 'QualificationGuide_' . $data['ID']);
+            if ($url) update_post_meta($post_id, '_qualification_guide_url', $url);
         } catch (Exception $e) {
         }
     }
 
-    /**
-     * Maps an individual unit dataset to the WP DB, maps relational data, and requests related documents.
-     * @param SoapClient $client The active SOAP endpoint instance.
-     * @param array $data The mapped XML entity parameters.
-     */
     private static function process_single_unit($client, $data)
     {
         if (!isset($data['ID'])) return;
@@ -349,15 +335,35 @@ class Quba_Cron_Sync
         $post_id = self::save_post_data($data, 'units');
         $numeric_id = (int)$data['ID'];
 
+        $pdfContent = '';
+
+        // Fallback matrix to force PDF extraction regardless of API signature irregularities
         try {
-            $pdf_res = $client->QUBA_GetUnitListingDocument(['qualificationID' => $numeric_id]);
-            $pdfContent = $pdf_res->QUBA_GetUnitListingDocumentResult ?? '';
-            if ($pdfContent) {
-                if (base64_decode($pdfContent, true) !== false) $pdfContent = base64_decode($pdfContent);
-                $url = self::store_document($pdfContent, 'units/unit-listing', 'UnitListing_' . $numeric_id);
-                if ($url) update_post_meta($post_id, '_unit_listing_url', $url);
-            }
+            $pdf_res = $client->QUBA_GetUnitDocument(['unitID' => $numeric_id]);
+            $pdfContent = $pdf_res->QUBA_GetUnitDocumentResult ?? '';
         } catch (Exception $e) {
+        }
+
+        if (!$pdfContent) {
+            try {
+                $pdf_res = $client->QUBA_GetUnitListingDocument(['unitID' => $numeric_id]);
+                $pdfContent = $pdf_res->QUBA_GetUnitListingDocumentResult ?? '';
+            } catch (Exception $e) {
+            }
+        }
+
+        if (!$pdfContent) {
+            try {
+                // The original implementation param
+                $pdf_res = $client->QUBA_GetUnitListingDocument(['qualificationID' => $numeric_id]);
+                $pdfContent = $pdf_res->QUBA_GetUnitListingDocumentResult ?? '';
+            } catch (Exception $e) {
+            }
+        }
+
+        if ($pdfContent) {
+            $url = self::save_pdf_stream($pdfContent, 'units', 'UnitDocument_' . $numeric_id);
+            if ($url) update_post_meta($post_id, '_unit_listing_url', $url);
         }
 
         try {
@@ -368,7 +374,7 @@ class Quba_Cron_Sync
                 'qualificationNumber' => '',
                 'qcaSector'           => '',
                 'provisionType'       => '',
-                'unitID'              => $numeric_id, // Mandatory numeric constraint
+                'unitID'              => $numeric_id,
                 'includeHub'          => false,
                 'centreID'            => ''
             ];
@@ -399,12 +405,6 @@ class Quba_Cron_Sync
         }
     }
 
-    /**
-     * Prepares and inserts or updates the structured array into the WP DB.
-     * @param array $data Formatted metadata properties.
-     * @param string $post_type The target custom post type.
-     * @return int Post ID generated or updated.
-     */
     private static function save_post_data($data, $post_type)
     {
         $meta_id_key = $data['ID'] ?? '';
@@ -430,13 +430,6 @@ class Quba_Cron_Sync
         }
     }
 
-    /**
-     * Decodes and stores binary stream data to the local server disk.
-     * @param string $file_data The raw binary or decoded base64 string.
-     * @param string $path_suffix The sub-directory to construct.
-     * @param string $filename The constructed file name.
-     * @return string|bool URL endpoint to the generated file, or false on failure.
-     */
     private static function store_document($file_data, $path_suffix, $filename)
     {
         $upload_dir = wp_upload_dir();
@@ -457,9 +450,6 @@ class Quba_Cron_Sync
  */
 class Quba_Admin
 {
-    /**
-     * Bootstraps UI and AJAX bindings to the WP Core.
-     */
     public static function init()
     {
         add_action('admin_menu', [__CLASS__, 'register_menu']);
@@ -469,9 +459,6 @@ class Quba_Admin
         add_action('wp_ajax_quba_process_batch', [__CLASS__, 'ajax_process_batch']);
     }
 
-    /**
-     * Mounts the management view to the WP Toolbar.
-     */
     public static function register_menu()
     {
         add_submenu_page(
@@ -484,22 +471,16 @@ class Quba_Admin
         );
     }
 
-    /**
-     * Provisions JS dependencies exclusively on the management screen.
-     */
     public static function enqueue_admin_scripts($hook)
     {
         if ($hook !== 'tools_page_quba-sync') return;
 
-        wp_enqueue_script('quba-admin-sync', plugin_dir_url(__FILE__) . 'assets/js/admin-sync.js', ['jquery'], '2.3.1', true);
+        wp_enqueue_script('quba-admin-sync', plugin_dir_url(__FILE__) . 'assets/js/admin-sync.js', ['jquery'], '2.3.2', true);
         wp_localize_script('quba-admin-sync', 'qubaAdminAjax', [
             'nonce' => wp_create_nonce('quba_admin_nonce')
         ]);
     }
 
-    /**
-     * Renders the HTML DOM structure for the backend sync interface.
-     */
     public static function render_admin_page()
     {
 ?>
@@ -530,9 +511,6 @@ class Quba_Admin
     <?php
     }
 
-    /**
-     * Translates JS initializations into the PHP queue builder method mapping the sync scope.
-     */
     public static function ajax_init_sync()
     {
         check_ajax_referer('quba_admin_nonce', 'nonce');
@@ -545,9 +523,6 @@ class Quba_Admin
         wp_send_json_success(['total' => $total]);
     }
 
-    /**
-     * Directs batched extraction loops recursively requested by the frontend interface.
-     */
     public static function ajax_process_batch()
     {
         check_ajax_referer('quba_admin_nonce', 'nonce');
@@ -561,13 +536,9 @@ class Quba_Admin
 /**
  * Class Quba_Admin_Meta
  * Manages the generation of native WordPress Meta Boxes completely removing Carbon Fields dependencies.
- * Includes a native advanced repeater with duplication, reordering, collapsing, and deletion capabilities via a tabbed interface.
  */
 class Quba_Admin_Meta
 {
-    /**
-     * Initializes WP Action hooks for meta box UI injections.
-     */
     public static function init()
     {
         add_action('add_meta_boxes', [__CLASS__, 'register_meta_boxes']);
@@ -576,9 +547,6 @@ class Quba_Admin_Meta
         add_action('admin_footer', [__CLASS__, 'render_inline_js_css']);
     }
 
-    /**
-     * Enqueues media uploading tools and jQuery sortable for drag-and-drop mechanics.
-     */
     public static function enqueue_scripts($hook)
     {
         global $post_type;
@@ -588,18 +556,11 @@ class Quba_Admin_Meta
         }
     }
 
-    /**
-     * Registers the unified meta box layout block on the target post types.
-     */
     public static function register_meta_boxes()
     {
         add_meta_box('quba_meta_data', 'QUBA Data & Documents', [__CLASS__, 'render_meta_box'], ['qualifications', 'units'], 'normal', 'high');
     }
 
-    /**
-     * Renders the tabbed HTML Layout mapping API inputs to read-only constraints and mounting the Document repeater.
-     * @param WP_Post $post Current Post Object
-     */
     public static function render_meta_box($post)
     {
         wp_nonce_field('quba_meta_nonce_action', 'quba_meta_nonce');
@@ -633,7 +594,7 @@ class Quba_Admin_Meta
             '_reviewdate' => 'Review Date',
             '_expirydate' => 'End Date',
             '_glh' => 'Guided Learning Hours (GLH)',
-            '_unit_listing_url' => 'Unit Listing PDF URL',
+            '_unit_listing_url' => 'Unit Document PDF URL',
             '_related_qualifications' => 'Related Qualifications (JSON)'
         ];
 
@@ -708,10 +669,6 @@ class Quba_Admin_Meta
     <?php
     }
 
-    /**
-     * Validates Nonce context and serializes updated repeatable properties to the WP DB.
-     * @param int $post_id Contextual Target Post.
-     */
     public static function save_meta_boxes($post_id)
     {
         if (!isset($_POST['quba_meta_nonce']) || !wp_verify_nonce($_POST['quba_meta_nonce'], 'quba_meta_nonce_action')) return;
@@ -734,9 +691,6 @@ class Quba_Admin_Meta
         }
     }
 
-    /**
-     * Mounts specialized localized DOM scripting to orchestrate tabs and advanced repeater UI requirements.
-     */
     public static function render_inline_js_css()
     {
         global $post_type;
@@ -975,7 +929,6 @@ class Quba_Admin_Meta
     }
 }
 
-
 /**
  * Class Quba_Render
  * Manages the generation of UI HTML.
@@ -1086,8 +1039,8 @@ class Quba_Controllers
             is_post_type_archive('qualifications') || is_post_type_archive('units') ||
             is_singular('qualifications') || is_singular('units') || is_tax('qualifications_cat')
         ) {
-            wp_enqueue_style('quba-main-css', plugin_dir_url(__FILE__) . 'assets/css/main.css', [], '2.3.1', 'all');
-            wp_enqueue_script('quba-main-js', plugin_dir_url(__FILE__) . 'assets/js/main.js', ['jquery'], '2.3.1', true);
+            wp_enqueue_style('quba-main-css', plugin_dir_url(__FILE__) . 'assets/css/main.css', [], '2.3.2', 'all');
+            wp_enqueue_script('quba-main-js', plugin_dir_url(__FILE__) . 'assets/js/main.js', ['jquery'], '2.3.2', true);
             wp_localize_script('quba-main-js', 'qubaAjaxObj', [
                 'ajaxUrl' => admin_url('admin-ajax.php'),
                 'nonce'   => wp_create_nonce('quba_ajax_nonce')
