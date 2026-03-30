@@ -448,11 +448,10 @@ class Quba_Render
             $post_id = $data['post_id'];
         }
 
-        $icon = '&#10004;';
         if (in_array($data['Level'] ?? '', ['E1', 'E2', 'E3'])) {
-            $level_val = str_replace('E', $icon . ' Entry Level ', $data['Level']);
+            $level_val = str_replace('E', ' Entry Level ', $data['Level']);
         } else {
-            $level_val = str_replace('L', $icon . ' Level ', $data['Level'] ?? '');
+            $level_val = str_replace('L', ' Level ', $data['Level'] ?? '');
         }
 ?>
         <div class="col-lg-4 post-item">
@@ -460,7 +459,11 @@ class Quba_Render
                 <div class="image-box image-box-placeholder">
                     <img src="<?= get_site_url() ?>/wp-content/uploads/2023/10/logo-new.svg" alt="Logo">
                     <span class="level <?= esc_attr($data['Level'] ?? '') ?>">
-                        <span class="level-badge">&#10004; <?= wp_kses_post($level_val) ?></span>
+                        <span class="level-badge">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-check2" viewBox="0 0 16 16">
+                                <path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0" />
+                            </svg><?= wp_kses_post($level_val) ?>
+                        </span>
                     </span>
                 </div>
                 <div class="content-box content-box-v1">

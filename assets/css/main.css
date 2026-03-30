@@ -12,3 +12,7 @@
 
     white-space: nowrap;
 }
+
+.level-badge img {
+    position: static !important;
+}
