@@ -968,20 +968,23 @@ class Quba_Controllers
         return $template;
     }
     /**
-     * Localized Qualification Search (Replaces SOAP API call on frontend)
+     * Localized Qualification Search (Reads strictly from WP Database Meta)
      */
     public static function archive_ajax_qualifications()
     {
         $args = [
             'post_type' => 'qualifications',
-            'posts_per_page' => -1,
+            'posts_per_page' => 100, // Safe limit
             'post_status' => 'publish',
             'meta_query' => ['relation' => 'AND']
         ];
 
+        // Title Keyword Search
         if (!empty($_POST['qualificationTitle'])) {
             $args['s'] = sanitize_text_field($_POST['qualificationTitle']);
         }
+
+        // Meta Filters
         if (!empty($_POST['qualificationLevel'])) {
             $args['meta_query'][] = ['key' => '_level', 'value' => sanitize_text_field($_POST['qualificationLevel']), 'compare' => '='];
         }
@@ -991,14 +994,20 @@ class Quba_Controllers
         if (!empty($_POST['qualificationType'])) {
             $args['meta_query'][] = ['key' => '_type', 'value' => sanitize_text_field($_POST['qualificationType']), 'compare' => '='];
         }
+        if (!empty($_POST['qcaSector'])) {
+            $args['meta_query'][] = ['key' => '_classification1', 'value' => sanitize_text_field($_POST['qcaSector']), 'compare' => 'LIKE'];
+        }
 
         $query = new WP_Query($args);
 
         if ($query->have_posts()) {
+            echo '<div class="search-results-summary mb-4"><div class="results-count-display">';
+            echo '<span class="results-number">' . number_format($query->found_posts) . '</span>';
+            echo '<span class="results-text"> Qualification' . ($query->found_posts !== 1 ? 's' : '') . ' Found</span></div></div>';
+
             echo '<div class="row row-results g-5">';
             while ($query->have_posts()) {
                 $query->the_post();
-                // Map local post to the array structure Quba_Render expects
                 $data = [
                     'ID' => get_post_meta(get_the_ID(), '_id', true),
                     'Level' => get_post_meta(get_the_ID(), '_level', true),
@@ -1016,42 +1025,53 @@ class Quba_Controllers
     }
 
     /**
-     * Localized Unit Search
+     * Localized Unit Search (Reads strictly from WP Database Meta)
      */
     public static function archive_ajax_units()
     {
         $args = [
             'post_type' => 'units',
-            'posts_per_page' => -1,
+            'posts_per_page' => 100, // Safe limit
             'post_status' => 'publish',
             'meta_query' => ['relation' => 'AND']
         ];
 
+        // Title Keyword Search
         if (!empty($_POST['unitTitle'])) {
             $args['s'] = sanitize_text_field($_POST['unitTitle']);
         }
+
+        // Meta Filters
         if (!empty($_POST['unitLevel'])) {
             $args['meta_query'][] = ['key' => '_level', 'value' => sanitize_text_field($_POST['unitLevel']), 'compare' => '='];
         }
+        if (!empty($_POST['qcaSector'])) {
+            $args['meta_query'][] = ['key' => '_qcasector', 'value' => sanitize_text_field($_POST['qcaSector']), 'compare' => 'LIKE'];
+        }
+        if (!empty($_POST['unitType'])) {
+            $args['meta_query'][] = ['key' => '_classification3', 'value' => sanitize_text_field($_POST['unitType']), 'compare' => '='];
+        }
+
+        // QCA Code checks both National Code and Alpha ID
         if (!empty($_POST['qcaCode'])) {
-            // Check both national code and alpha ID
             $args['meta_query'][] = [
                 'relation' => 'OR',
                 ['key' => '_nationalcode', 'value' => sanitize_text_field($_POST['qcaCode']), 'compare' => '='],
                 ['key' => '_id_alpha', 'value' => sanitize_text_field($_POST['qcaCode']), 'compare' => '=']
             ];
         }
-        if (!empty($_POST['qcaSector'])) {
-            $args['meta_query'][] = ['key' => '_qcasector', 'value' => sanitize_text_field($_POST['qcaSector']), 'compare' => 'LIKE'];
+
+        // Unit ID check
+        if (!empty($_POST['unitID'])) {
+            $args['meta_query'][] = ['key' => '_id_alpha', 'value' => sanitize_text_field($_POST['unitID']), 'compare' => '='];
         }
 
         $query = new WP_Query($args);
 
         if ($query->have_posts()) {
-            $total = $query->found_posts;
             echo '<div class="search-results-summary mb-4"><div class="results-count-display">';
-            echo '<span class="results-number">' . number_format($total) . '</span>';
-            echo '<span class="results-text"> Unit' . ($total !== 1 ? 's' : '') . ' Found</span></div></div>';
+            echo '<span class="results-number">' . number_format($query->found_posts) . '</span>';
+            echo '<span class="results-text"> Unit' . ($query->found_posts !== 1 ? 's' : '') . ' Found</span></div></div>';
 
             echo '<div class="row row-results g-5">';
             while ($query->have_posts()) {
