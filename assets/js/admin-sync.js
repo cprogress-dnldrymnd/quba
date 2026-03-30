@@ -8,22 +8,36 @@ jQuery(document).ready(function ($) {
     $startButton.on('click', function (e) {
         e.preventDefault();
         
+        // Retrieve the selected synchronization scope from the UI
+        var syncType = $('input[name="quba_sync_type"]:checked').val();
+        
         $startButton.prop('disabled', true).text('Initializing...');
         $progressBar.css('width', '0%').text('0%');
         $statusText.text('Fetching master list from QUBA API. This may take a minute...');
 
-        // Step 1: Initialize the Queue
+        /**
+         * Step 1: Initialize the Queue
+         * Calls the backend to fetch the initial data matrix based on the selected type.
+         */
         $.ajax({
             url: ajaxurl,
             type: 'POST',
             data: {
                 action: 'quba_init_sync',
-                nonce: qubaAdminAjax.nonce
+                nonce: qubaAdminAjax.nonce,
+                sync_type: syncType
             },
             success: function (response) {
                 if (response.success) {
                     totalItems = response.data.total;
                     processedItems = 0;
+                    
+                    if (totalItems === 0) {
+                        $statusText.html('<span style="color:#b32d2e;"><strong>Queue built, but 0 items were found. Ensure the API is responsive.</strong></span>');
+                        $startButton.prop('disabled', false).text('Run Sync Again');
+                        return;
+                    }
+
                     $statusText.text('Queue built. ' + totalItems + ' items found. Starting batch processing...');
                     processBatch();
                 } else {
@@ -38,7 +52,10 @@ jQuery(document).ready(function ($) {
         });
     });
 
-    // Step 2: Process the Queue in Batches
+    /**
+     * Step 2: Process the Queue in Batches
+     * Recursively calls the batch processor until the queue drops to 0.
+     */
     function processBatch() {
         $.ajax({
             url: ajaxurl,
@@ -57,7 +74,7 @@ jQuery(document).ready(function ($) {
                     $statusText.text('Processing... ' + processedItems + ' of ' + totalItems + ' completed.');
 
                     if (remaining > 0) {
-                        processBatch(); // Continue to next batch
+                        processBatch(); // Execute the next batch chunk
                     } else {
                         $statusText.html('<span style="color:green;"><strong>Sync Complete! All items processed.</strong></span>');
                         $startButton.prop('disabled', false).text('Run Sync Again');
