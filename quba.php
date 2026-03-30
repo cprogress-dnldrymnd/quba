@@ -681,37 +681,43 @@ class Quba_Controllers
 
     /**
      * Enqueues frontend scripts and styles securely.
-     * Restricts asset loading strictly to our custom post type archives and singles 
-     * to optimize global page load speeds.
+     * Restricts asset loading strictly to targeted custom post type archives and singles 
+     * to optimize global page load speeds and prevent CSS namespace collisions.
+     * * @return void
      */
     public static function enqueue_assets()
     {
-        // Only load the script if we are on the relevant templates
+        // Evaluate the current WP query state to restrict asset deployment
         if (
             is_post_type_archive('qualifications') || is_post_type_archive('units') ||
             is_singular('qualifications') || is_singular('units') || is_tax('qualifications_cat')
         ) {
 
-            // Enqueue main.js file
+            // Enqueue frontend stylesheet
+            wp_enqueue_style(
+                'quba-main-css',
+                plugin_dir_url(__FILE__) . 'assets/css/main.css',
+                [],           // Dependencies (empty array as it is a standalone file)
+                '2.0.0',      // Cache-busting version string matching plugin version
+                'all'         // Target media screen
+            );
+
+            // Enqueue frontend JavaScript logic
             wp_enqueue_script(
                 'quba-main-js',
                 plugin_dir_url(__FILE__) . 'assets/js/main.js',
-                ['jquery'], // Dependency: ensures jQuery is loaded first
-                '2.0.0',      // Versioning for cache-busting
-                true          // Load in the footer to prevent render-blocking
+                ['jquery'], // Dependency: Core jQuery must be parsed prior to execution
+                '2.0.0',      // Cache-busting version string
+                true          // Force execution in the document footer to prevent render-blocking
             );
 
-
-
-
-            // Localize script to pass the WP AJAX URL to the external main.js file
-            // You can access this in main.js via: qubaAjaxObj.ajaxUrl
+            // Expose server-side environment variables to the localized JavaScript scope
             wp_localize_script(
                 'quba-main-js',
                 'qubaAjaxObj',
                 [
                     'ajaxUrl' => admin_url('admin-ajax.php'),
-                    'nonce'   => wp_create_nonce('quba_ajax_nonce') // Optional: Added for future secure nonce validation
+                    'nonce'   => wp_create_nonce('quba_ajax_nonce') // Cryptographic token for request validation
                 ]
             );
         }
