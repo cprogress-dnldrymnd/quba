@@ -9,6 +9,9 @@ jQuery(document).ready(function ($) {
     var typingTimer;
     var doneTypingInterval = 500;
 
+    // Initialize the accordion logic for single unit pages
+    initAccordion();
+
     // Only initialize the search logic if we are on the Archive page
     if ($('#qualification-filter').length > 0) {
         
@@ -27,6 +30,40 @@ jQuery(document).ready(function ($) {
         } else {
             performSearch('post'); // Unfiltered Local Fallback
         }
+    }
+
+    /**
+     * Initializes the Accordion for Related Qualifications on the Single Units template.
+     * Safely prevents console errors if elements do not exist on the current page.
+     */
+    function initAccordion() {
+        // jQuery silently ignores these if the elements don't exist (No console errors)
+        $('#glh').val('');
+        $('#tqt').val('');
+
+        // Attach click event to qualification headers
+        $('.qualification-header').on('click', function(e) {
+            // Prevent default link behavior if clicking directly on the header area
+            if ($(e.target).is('a')) return; 
+
+            var $box = $(this).closest('.qualification-box');
+            var $expandBtn = $(this).find('.expand-btn');
+            var $details = $box.find('.qualification-details');
+            
+            var isExpanded = $box.hasClass('expanded');
+            
+            // First close all boxes
+            $('.qualification-box').removeClass('expanded');
+            $('.qualification-box .expand-btn').text('+');
+            $('.qualification-box .qualification-details').slideUp(250); // Smooth collapse
+            
+            // Then open this one if it wasn't already open
+            if (!isExpanded) {
+                $box.addClass('expanded');
+                $expandBtn.text('−');
+                $details.slideDown(250); // Smooth expand
+            }
+        });
     }
 
     /**
