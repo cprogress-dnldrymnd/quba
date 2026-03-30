@@ -219,7 +219,7 @@ jQuery(document).ready(function ($) {
     function performSearch(sourceType = 'quba') {
         var activePostType = $('#qualification-filter').attr('search_type') || 'qualifications';
         var actionName = activePostType === 'units' ? 'archive_ajax_units' : 'archive_ajax_qualifications';
-
+        console.log(sourceType);
         var searchData = {
             action: actionName,
             source: sourceType, 
