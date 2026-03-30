@@ -366,7 +366,6 @@ class Quba_API
         echo "</div>";
         return ob_get_clean();
     }
-
     /**
      * Internal helper to wrap raw XML in a SOAP Envelope for parsing.
      * * @param string $action SOAP Action namespace string.
@@ -375,13 +374,16 @@ class Quba_API
      */
     private static function wrap_soap_envelope($action, $xmlString)
     {
+        // Fallback to empty string if null is passed to prevent errors
+        $xmlString = $xmlString ? $xmlString : '';
+
         return '<?xml version="1.0" encoding="utf-8"?>
         <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
             <soap:Body>
                 <' . $action . 'Response xmlns="http://tempuri.org/">
                     <' . $action . 'Result namespace="" tableTypeName="">
                         ' . $xmlString . '
-                    </<' . $action . 'Result>
+                    </' . $action . 'Result>
                 </' . $action . 'Response>
             </soap:Body>
         </soap:Envelope>';
