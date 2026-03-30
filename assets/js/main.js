@@ -44,7 +44,7 @@ jQuery(document).ready(function ($) {
             // Update state attributes and UI classes
             $('#qualification-filter').attr('search_type', postType);
             $('.qualification-filter-holder').addClass('searching');
-
+            
             $('.filter-button').removeClass('filter-active');
             $this.parent().addClass('filter-active');
 
@@ -74,28 +74,28 @@ jQuery(document).ready(function ($) {
         // Construct payload from visible/active DOM elements
         var searchData = {
             action: actionName,
-            source: 'quba',
+            source: 'quba', 
             nonce: qubaAjaxObj.nonce, // Security token
 
             // Text Inputs (Shared or distinct mapped to their API param expectations)
-            qualificationTitle: $('input[name="Title"]').val(),
-            unitTitle: $('input[name="Title"]').val(),
+            qualificationTitle:  $('input[name="Title"]').val(),
+            unitTitle:           $('input[name="Title"]').val(), 
             qualificationNumber: $('input[name="qualificationNumber"]').val(),
-            qcaCode: $('input[name="qcaCode"]').val(),
-            unitID: $('input[name="unitID"]').val() || $('input[name="open_awards_unit_id"]').val(),
+            qcaCode:             $('input[name="qcaCode"]').val(),
+            unitID:              $('input[name="unitID"]').val() || $('input[name="open_awards_unit_id"]').val(),
 
             // Select Dropdowns
-            qualificationLevel: $('#level').val(),
-            unitLevel: $('#level').val(),
-            qcaSector: $('#qcaSector').val(),
-            qualificationType: $('#type').val(),
-            unitType: $('#unitType').val()
+            qualificationLevel:  $('#level').val(),
+            unitLevel:           $('#level').val(),
+            qcaSector:           $('#qcaSector').val(),
+            qualificationType:   $('#type').val(),
+            unitType:            $('#unitType').val()
         };
 
         // UI Loading State
         var $resultsHolder = $('.results-holder');
         var $spinner = $('.spinner-holder');
-
+        
         $spinner.show();
         $resultsHolder.fadeTo(200, 0.4);
 
@@ -115,5 +115,13 @@ jQuery(document).ready(function ($) {
                 $spinner.hide();
             }
         });
+    }
+
+    /**
+     * Trigger initial load on document ready ONLY if we are on the Archive page.
+     * We verify this by checking if the #qualification-filter container exists in the DOM.
+     */
+    if ($('#qualification-filter').length > 0) {
+        performSearch(); 
     }
 });

@@ -99,9 +99,3 @@ $chev = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="cu
     </div>
 </div>
 <?php get_footer(); ?>
-
-<script>
-    jQuery(document).ready(function() {
-        performSearch();
-    });
-</script>
