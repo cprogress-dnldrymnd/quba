@@ -458,7 +458,7 @@ class Quba_Render
         <div class="col-lg-4 post-item">
             <div class="post-box h-100">
                 <div class="image-box image-box-placeholder">
-                    <img src="https://openawards.theprogressteam.com/wp-content/uploads/2023/10/logo-new.svg" alt="Logo">
+                    <img src="<?= get_site_url() ?>/wp-content/uploads/2023/10/logo-new.svg" alt="Logo">
                     <span class="level <?= esc_attr($data['Level'] ?? '') ?>">
                         <span class="level-badge">&#10004; <?= wp_kses_post($level_val) ?></span>
                     </span>
@@ -700,6 +700,9 @@ class Quba_Controllers
                 '2.0.0',      // Versioning for cache-busting
                 true          // Load in the footer to prevent render-blocking
             );
+
+
+
 
             // Localize script to pass the WP AJAX URL to the external main.js file
             // You can access this in main.js via: qubaAjaxObj.ajaxUrl
