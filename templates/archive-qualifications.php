@@ -1,9 +1,10 @@
-<?php 
+<?php
+
 /**
  * Template Name: Qualifications Archive
  * * Loaded securely via Quba_Controllers hook from plugin root.
  */
-get_header(); 
+get_header();
 $chev = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-chevron-down" viewBox="0 0 16 16"> <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"/> </svg>';
 ?>
 <div id="primary" class="row-fluid">
@@ -34,7 +35,7 @@ $chev = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="cu
                             </div>
                         </div>
                     </div>
-                    
+
                     <div class="qualification-filter-holder position-relative">
                         <div class="spinner-holder">
                             <div class="spinner d-inline-block"> <svg xmlns="http://www.w3.org/2000/svg"
@@ -58,7 +59,7 @@ $chev = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="cu
                                 ?>
                                 <select class="trigger-ajax-change" name="Level" id="level">
                                     <option value="">Level</option>
-                                    <?php foreach ($levels as $level) { 
+                                    <?php foreach ($levels as $level) {
                                         $level_label = $level;
                                         if (strpos($level, 'E') === 0) $level_label = 'Entry Level ' . substr($level, 1);
                                         elseif (strpos($level, 'L') === 0) $level_label = 'Level ' . substr($level, 1);
@@ -74,12 +75,13 @@ $chev = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="cu
                                 ?>
                                 <select class="trigger-ajax-change" name="qcaSector" id="qcaSector">
                                     <option value="">Sector</option>
-                                    <?php if( !($sectors instanceof Exception) && !empty($sectors) ): foreach ($sectors as $sector) { ?>
-                                        <option value="<?= esc_attr($sector->Code) ?>" <?= selected($sector->Code, $qcaSector_val, false) ?>><?= esc_html($sector->Classification) ?></option>
-                                    <?php } endif; ?>
+                                    <?php if (!($sectors instanceof Exception) && !empty($sectors)): foreach ($sectors as $sector) { ?>
+                                            <option value="<?= esc_attr($sector->Code) ?>" <?= selected($sector->Code, $qcaSector_val, false) ?>><?= esc_html($sector->Classification) ?></option>
+                                    <?php }
+                                    endif; ?>
                                 </select>
                             </div>
-                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -97,3 +99,9 @@ $chev = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="cu
     </div>
 </div>
 <?php get_footer(); ?>
+
+<script>
+    jQuery(document).ready(function() {
+        performSearch();
+    });
+</script>

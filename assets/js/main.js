@@ -116,7 +116,4 @@ jQuery(document).ready(function ($) {
             }
         });
     }
-
-    // Optional: Trigger initial load on document ready
-    performSearch()
 });
