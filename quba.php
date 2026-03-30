@@ -3,7 +3,7 @@
 /**
  * Plugin Name: Quba System Integration
  * Description: Integrates QUBA SOAP API, synchronizes units/qualifications via batched processes, and provides custom native templates & meta boxes.
- * Version: 2.5.0
+ * Version: 2.5.1
  * Author: Digitally Disruptive - Donald Raymundo
  * Author URI: https://digitallydisruptive.co.uk/
  * Text Domain: quba-integration
@@ -344,6 +344,7 @@ class Quba_Cron_Sync
         }
 
         if ($pdfContent) {
+            // Write native binary stream directly to disk matching exact original behavior
             $url = self::store_document($pdfContent, 'units/unit-content', 'UnitContent_' . $numeric_id);
             if ($url) update_post_meta($post_id, '_unit_content_url', $url);
         }
@@ -479,7 +480,7 @@ class Quba_Admin
     {
         if ($hook !== 'tools_page_quba-sync') return;
 
-        wp_enqueue_script('quba-admin-sync', plugin_dir_url(__FILE__) . 'assets/js/admin-sync.js', ['jquery'], '2.5.0', true);
+        wp_enqueue_script('quba-admin-sync', plugin_dir_url(__FILE__) . 'assets/js/admin-sync.js', ['jquery'], '2.5.1', true);
         wp_localize_script('quba-admin-sync', 'qubaAdminAjax', [
             'nonce' => wp_create_nonce('quba_admin_nonce')
         ]);
@@ -602,7 +603,7 @@ class Quba_Admin_Meta
             '_level' => 'Level',
             '_credits' => 'Credit Value',
             '_classification2' => 'Risk Rating',
-            '_classification3' => 'Unit Type',
+            '_unittype' => 'Unit Type',
             '_recognitiondate' => 'Start Date',
             '_reviewdate' => 'Review Date',
             '_expirydate' => 'End Date',
@@ -1052,8 +1053,8 @@ class Quba_Controllers
             is_post_type_archive('qualifications') || is_post_type_archive('units') ||
             is_singular('qualifications') || is_singular('units') || is_tax('qualifications_cat')
         ) {
-            wp_enqueue_style('quba-main-css', plugin_dir_url(__FILE__) . 'assets/css/main.css', [], '2.5.0', 'all');
-            wp_enqueue_script('quba-main-js', plugin_dir_url(__FILE__) . 'assets/js/main.js', ['jquery'], '2.5.0', true);
+            wp_enqueue_style('quba-main-css', plugin_dir_url(__FILE__) . 'assets/css/main.css', [], '2.5.1', 'all');
+            wp_enqueue_script('quba-main-js', plugin_dir_url(__FILE__) . 'assets/js/main.js', ['jquery'], '2.5.1', true);
             wp_localize_script('quba-main-js', 'qubaAjaxObj', [
                 'ajaxUrl' => admin_url('admin-ajax.php'),
                 'nonce'   => wp_create_nonce('quba_ajax_nonce')
@@ -1127,7 +1128,7 @@ class Quba_Controllers
 
             if ($query->max_num_pages > $paged) {
                 echo '<div class="load-more-container w-100 text-center mt-5" id="quba-load-more-container" style="flex: 0 0 100%;">';
-                echo '<button class="quba-load-more button-box-v2 button-accent" style="border:none; padding:15px 30px; cursor:pointer; background-color:var(--sun-orange); color:#fff; border-radius:5px;" data-page="' . ($paged + 1) . '">Load More</button>';
+                echo '<button class="quba-load-more button-box-v2 button-accent" style="border:none; padding:15px 30px; cursor:pointer; background-color:var(--quba-accent); color:#fff; border-radius:5px;" data-page="' . ($paged + 1) . '">Load More</button>';
                 echo '</div>';
             }
 
@@ -1150,7 +1151,7 @@ class Quba_Controllers
 
         $args = [
             'post_type'      => 'units',
-            'posts_per_page' => 21,
+            'posts_per_page' => 20,
             'paged'          => $paged,
             'post_status'    => 'publish',
             'meta_query'     => ['relation' => 'AND']
@@ -1175,6 +1176,13 @@ class Quba_Controllers
         if (!empty($_POST['unitID'])) {
             $args['meta_query'][] = ['key' => '_id_alpha', 'value' => sanitize_text_field($_POST['unitID']), 'compare' => '='];
         }
+        if (!empty($_POST['unitType'])) {
+            $args['meta_query'][] = [
+                'relation' => 'OR',
+                ['key' => '_unittype', 'value' => sanitize_text_field($_POST['unitType']), 'compare' => 'LIKE'],
+                ['key' => '_classification3', 'value' => sanitize_text_field($_POST['unitType']), 'compare' => 'LIKE']
+            ];
+        }
 
         $query = new WP_Query($args);
 
@@ -1193,7 +1201,7 @@ class Quba_Controllers
 
             if ($query->max_num_pages > $paged) {
                 echo '<div class="load-more-container w-100 text-center mt-5" id="quba-load-more-container" style="flex: 0 0 100%;">';
-                echo '<button class="quba-load-more button-box-v2 button-accent" style="border:none; padding:15px 30px; cursor:pointer; background-color:var(--sun-orange); color:#fff; border-radius:5px;" data-page="' . ($paged + 1) . '">Load More</button>';
+                echo '<button class="quba-load-more button-box-v2 button-accent" style="border:none; padding:15px 30px; cursor:pointer; background-color:var(--quba-accent); color:#fff; border-radius:5px;" data-page="' . ($paged + 1) . '">Load More</button>';
                 echo '</div>';
             }
 
