@@ -17,8 +17,28 @@ $unitQualification = get_post_meta($post_id, '_related_qualifications', true);
 $additional_documents = get_post_meta($post_id, 'additional_documents', true);
 ?>
 
+<style>
+.button-disabled { opacity: 0.6; cursor: not-allowed; }
+.button-disabled span { color: #888; }
+.debug-info { margin: 20px; padding: 15px; background: #f8f9fa; border: 1px solid #ddd; border-radius: 5px; }
+</style>
+
 <div id="primary" class="row-fluid">
     <div id="content" role="main" class="span8 offset2">
+        
+        <?php 
+        if (current_user_can('administrator')) {
+            echo '<div class="debug-info">';
+            echo '<h3>Debug Information (Admin Only)</h3>';
+            echo '<p>Mapped WP Post ID: ' . esc_html($post_id) . '</p>';
+            echo '<p>Internal Unit API ID (_id): ' . esc_html(get_post_meta($post_id, '_id', true)) . '</p>';
+            echo '<p>Open Awards Unit ID (_id_alpha): ' . esc_html(get_post_meta($post_id, '_id_alpha', true)) . '</p>';
+            echo '<p>Unit Document Local PDF: ' . ($unitPdf ? 'Available' : 'Not Available') . '</p>';
+            echo '<p>Related Qualifications Cached Count: ' . (is_array($unitQualification) ? count($unitQualification) : 0) . '</p>';
+            echo '</div>';
+        }
+        ?>
+
         <section class="hero-style-1"
             style="background-image: url(https://openawards.theprogressteam.com/wp-content/uploads/2024/12/qual-hero-bg.png)">
             <div class="container">
@@ -146,7 +166,7 @@ $additional_documents = get_post_meta($post_id, 'additional_documents', true);
                         </div>
                     </div>
 
-                    <?php if ($additional_documents): ?>
+                    <?php if ($additional_documents && is_array($additional_documents) && count($additional_documents) > 0): ?>
                         <div class="col-lg-6">
                             <div class="info-box">
                                 <div class="inner">
@@ -157,9 +177,11 @@ $additional_documents = get_post_meta($post_id, 'additional_documents', true);
                                                 <h3><?= esc_html($doc['document_title']) ?></h3>
                                             </li>
                                         </ul>
+                                        <?php if (!empty($doc['document_file'])): ?>
                                         <div class="button-box-v2 button-primary">
                                             <a href="<?= esc_url(wp_get_attachment_url($doc['document_file'])) ?>" target="_blank">View Document</a>
                                         </div>
+                                        <?php endif; ?>
                                     <?php endforeach; ?>
                                 </div>
                             </div>
