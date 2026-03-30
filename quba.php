@@ -928,15 +928,45 @@ class Quba_Sync_Manager
 class Quba_Controllers
 {
 
+
+
     public static function init()
     {
-        // [ ... Keep your existing enqueue_assets and route_templates hooks ... ]
+        add_filter('template_include', [__CLASS__, 'route_templates'], 99);
         add_action('wp_ajax_nopriv_archive_ajax_qualifications', [__CLASS__, 'archive_ajax_qualifications']);
         add_action('wp_ajax_archive_ajax_qualifications', [__CLASS__, 'archive_ajax_qualifications']);
         add_action('wp_ajax_nopriv_archive_ajax_units', [__CLASS__, 'archive_ajax_units']);
         add_action('wp_ajax_archive_ajax_units', [__CLASS__, 'archive_ajax_units']);
     }
 
+    /**
+     * Intercepts standard WordPress template resolution and overrides it 
+     * with custom plugin templates for specific custom post types.
+     * * @param string $template The absolute path to the template WordPress intends to load.
+     * @return string The modified absolute path pointing to the plugin's template directory.
+     */
+    public static function route_templates($template)
+    {
+        // Route Archive endpoints for both post types
+        if (is_post_type_archive('qualifications') || is_post_type_archive('units') || is_tax('qualifications_cat')) {
+            $plugin_archive = plugin_dir_path(__FILE__) . 'templates/archive-qualifications.php';
+            if (file_exists($plugin_archive)) return $plugin_archive;
+        }
+
+        // Route Single endpoint for Qualifications
+        if (is_singular('qualifications')) {
+            $plugin_single = plugin_dir_path(__FILE__) . 'templates/single-qualifications.php';
+            if (file_exists($plugin_single)) return $plugin_single;
+        }
+
+        // Route Single endpoint strictly for Units
+        if (is_singular('units')) {
+            $plugin_single_unit = plugin_dir_path(__FILE__) . 'templates/single-units.php';
+            if (file_exists($plugin_single_unit)) return $plugin_single_unit;
+        }
+
+        return $template;
+    }
     /**
      * Localized Qualification Search (Replaces SOAP API call on frontend)
      */
