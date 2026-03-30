@@ -11,7 +11,7 @@ get_header();
 $post_id = get_the_ID();
 $id = get_post_meta($post_id, '_id_alpha', true) ?: get_post_meta($post_id, '_id', true);
 
-$unitPdf = get_post_meta($post_id, '_unit_listing_url', true);
+$unitPdf = get_post_meta($post_id, '_unit_content_url', true);
 $unitQualification = get_post_meta($post_id, '_related_qualifications', true);
 
 $additional_documents = get_post_meta($post_id, 'additional_documents', true);
