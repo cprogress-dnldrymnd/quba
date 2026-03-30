@@ -50,17 +50,19 @@ function get_units_with_qualifications( int $posts_per_page = -1 ): array {
  * Example execution wrapper to demonstrate iteration.
  * * @return void
  */
-function display_qualified_units(): void {
+function display_qualified_units(){
+    ob_start();
     $units = get_units_with_qualifications();
 
     if ( empty( $units ) ) {
-        return 'n/a';
+        echo 'na';
     }
 
     foreach ( $units as $unit ) {
        echo $unit->post_title;
        echo '<br>';
     }
+    return ob_get_clean();
 }
 
 add_shortcode('display_qualified_units', 'display_qualified_units');
