@@ -90,16 +90,18 @@ class Quba_API
  * Class Quba_Cron_Sync
  * Orchestrates batched automated mapping of API data into persistent local WP Post Types.
  */
-class Quba_Cron_Sync 
+class Quba_Cron_Sync
 {
-    public static function init() {
+    public static function init()
+    {
         // Daily trigger to build the queue
         add_action('quba_daily_sync_build_queue', [__CLASS__, 'build_sync_queue']);
         // Frequent trigger to process the queue in small chunks
         add_action('quba_process_sync_queue', [__CLASS__, 'process_batch_cron']);
     }
 
-    public static function activate() {
+    public static function activate()
+    {
         if (!wp_next_scheduled('quba_daily_sync_build_queue')) {
             wp_schedule_event(time(), 'daily', 'quba_daily_sync_build_queue');
         }
@@ -108,58 +110,135 @@ class Quba_Cron_Sync
         }
     }
 
-    public static function deactivate() {
+    public static function deactivate()
+    {
         wp_clear_scheduled_hook('quba_daily_sync_build_queue');
         wp_clear_scheduled_hook('quba_process_sync_queue');
     }
 
     /**
-     * Extracts full API lists and stores them in a transient queue to prevent timeouts.
+     * Extracts full API lists via an extraction matrix and stores them in a transient queue.
      */
-    public static function build_sync_queue() {
+    public static function build_sync_queue()
+    {
         $client = Quba_API::get_client();
         if (!$client) return false;
 
         $queue = [];
+        $processed_quals = []; // Deduplication map
+        $processed_units = []; // Deduplication map
 
-        // 1. Fetch Qualifications
-        try {
-            $req = ['qualificationID' => 0, 'qualificationTitle' => '', 'qualificationLevel' => '', 'qualificationNumber' => '', 'qcaSector' => '', 'provisionType' => '', 'unitID' => '', 'includeHub' => false, 'centreID' => ''];
-            $res = $client->QUBA_QualificationSearch($req);
-            $xmlString = $res->QUBA_QualificationSearchResult->any ?? '';
-            if ($xmlString) {
-                $xml = new SimpleXMLElement(Quba_API::wrap_soap_envelope('QUBA_QualificationSearch', $xmlString));
-                $quals = $xml->xpath('//QubaQualification');
-                foreach ($quals as $qual) {
-                    $data = [];
-                    foreach ($qual->children() as $child) {
-                        if ($child->getName() != 'Classifications') $data[$child->getName()] = trim((string) $child);
-                    }
-                    if (isset($qual->Classifications->Classification1)) $data['Classification1'] = trim((string) $qual->Classifications->Classification1);
-                    if (isset($qual->Classifications->Classification2)) $data['Classification2'] = trim((string) $qual->Classifications->Classification2);
-                    
-                    $queue[] = ['type' => 'qualifications', 'data' => $data];
-                }
+        // --- 1. QUALIFICATIONS EXTRACTION MATRIX ---
+        // Constraint: QUBA API throws QUBA_UB003 if no parameters are passed.
+        // Solution: Iterate through all QCA Sectors, followed by wildcard sweeps.
+        $sectors = Quba_API::get_qca_sectors();
+        $search_queries = [];
+
+        if (!is_wp_error($sectors) && !($sectors instanceof Exception) && !empty($sectors)) {
+            foreach ($sectors as $sector) {
+                $search_queries[] = ['qcaSector' => (string)$sector->Code, 'qualificationTitle' => ''];
             }
-        } catch (Exception $e) { error_log('Qual Queue Error: ' . $e->getMessage()); }
+        }
 
-        // 2. Fetch Units
+        // Fallback catch-all for uncategorized qualifications
+        $wildcards = ['%', 'a', 'e', 'i', 'o', 'u'];
+        foreach ($wildcards as $char) {
+            $search_queries[] = ['qcaSector' => '', 'qualificationTitle' => $char];
+        }
+
+        foreach ($search_queries as $sq) {
+            try {
+                $req = [
+                    'qualificationID'     => 0,
+                    'qualificationTitle'  => $sq['qualificationTitle'],
+                    'qualificationLevel'  => '',
+                    'qualificationNumber' => '',
+                    'qcaSector'           => $sq['qcaSector'],
+                    'provisionType'       => '',
+                    'unitID'              => '',
+                    'includeHub'          => false,
+                    'centreID'            => ''
+                ];
+                $res = $client->QUBA_QualificationSearch($req);
+                $xmlString = $res->QUBA_QualificationSearchResult->any ?? '';
+
+                if ($xmlString) {
+                    $xml = new SimpleXMLElement(Quba_API::wrap_soap_envelope('QUBA_QualificationSearch', $xmlString));
+                    $quals = $xml->xpath('//QubaQualification');
+                    if ($quals) {
+                        foreach ($quals as $qual) {
+                            $data = [];
+                            foreach ($qual->children() as $child) {
+                                if ($child->getName() != 'Classifications') {
+                                    $data[$child->getName()] = trim((string) $child);
+                                }
+                            }
+                            if (isset($qual->Classifications->Classification1)) {
+                                $data['Classification1'] = trim((string) $qual->Classifications->Classification1);
+                            }
+                            if (isset($qual->Classifications->Classification2)) {
+                                $data['Classification2'] = trim((string) $qual->Classifications->Classification2);
+                            }
+
+                            $id = $data['ID'] ?? '';
+                            // Deduplicate before adding to the processing queue
+                            if ($id && !isset($processed_quals[$id])) {
+                                $processed_quals[$id] = true;
+                                $queue[] = ['type' => 'qualifications', 'data' => $data];
+                            }
+                        }
+                    }
+                }
+            } catch (Exception $e) {
+                error_log('Qual Queue Error on Sector/Char (' . $sq['qcaSector'] . $sq['qualificationTitle'] . '): ' . $e->getMessage());
+                continue;
+            }
+        }
+
+        // --- 2. UNITS EXTRACTION ---
         try {
-            $req = ['unitID' => 0, 'unitIdAlpha' => '', 'unitTitle' => '%', 'allOrPartTitle' => true, 'unitLevel' => '', 'unitCredits' => 0, 'qcaSector' => '', 'learnDirectCode' => '', 'qcaCode' => '', 'unitType' => '', 'provisionType' => '', 'includeHub' => true, 'moduleID' => 0, 'alternativeUnitCode' => ''];
+            // Units API historically accepts the '%' wildcard securely with allOrPartTitle = true
+            $req = [
+                'unitID'              => 0,
+                'unitIdAlpha'         => '',
+                'unitTitle'           => '%',
+                'allOrPartTitle'      => true,
+                'unitLevel'           => '',
+                'unitCredits'         => 0,
+                'qcaSector'           => '',
+                'learnDirectCode'     => '',
+                'qcaCode'             => '',
+                'unitType'            => '',
+                'provisionType'       => '',
+                'includeHub'          => true,
+                'moduleID'            => 0,
+                'alternativeUnitCode' => '',
+            ];
             $res = $client->QUBA_UnitSearch($req);
             $xmlString = $res->QUBA_UnitSearchResult->any ?? '';
+
             if ($xmlString) {
                 $xml = new SimpleXMLElement(Quba_API::wrap_soap_envelope('QUBA_UnitSearch', $xmlString));
                 $units = $xml->xpath('//QubaUnit');
-                foreach ($units as $unit) {
-                    $data = [];
-                    foreach ($unit->children() as $child) {
-                        $data[$child->getName()] = trim((string) $child);
+                if ($units) {
+                    foreach ($units as $unit) {
+                        $data = [];
+                        foreach ($unit->children() as $child) {
+                            $data[$child->getName()] = trim((string) $child);
+                        }
+
+                        $id = $data['ID_Alpha'] ?? ($data['ID'] ?? '');
+                        // Deduplicate before adding to the processing queue
+                        if ($id && !isset($processed_units[$id])) {
+                            $processed_units[$id] = true;
+                            $queue[] = ['type' => 'units', 'data' => $data];
+                        }
                     }
-                    $queue[] = ['type' => 'units', 'data' => $data];
                 }
             }
-        } catch (Exception $e) { error_log('Unit Queue Error: ' . $e->getMessage()); }
+        } catch (Exception $e) {
+            error_log('Unit Queue Error: ' . $e->getMessage());
+        }
 
         update_option('quba_sync_queue', $queue, false);
         return count($queue);
@@ -168,7 +247,8 @@ class Quba_Cron_Sync
     /**
      * Processes chunks of the queue. Can be fired by cron or AJAX.
      */
-    public static function process_batch($batch_size = 5) {
+    public static function process_batch($batch_size = 5)
+    {
         $queue = get_option('quba_sync_queue', []);
         if (empty($queue)) return 0;
 
@@ -176,7 +256,7 @@ class Quba_Cron_Sync
         if (!$client) return count($queue);
 
         $batch = array_splice($queue, 0, $batch_size);
-        
+
         foreach ($batch as $item) {
             if ($item['type'] === 'qualifications') {
                 self::process_single_qualification($client, $item['data']);
@@ -189,15 +269,17 @@ class Quba_Cron_Sync
         return count($queue);
     }
 
-    public static function process_batch_cron() {
+    public static function process_batch_cron()
+    {
         self::process_batch(20); // Process 20 items per hourly cron run
     }
 
-    private static function process_single_qualification($client, $data) {
+    private static function process_single_qualification($client, $data)
+    {
         if (!isset($data['ID'])) return;
         $post_id = self::save_post_data($data, 'qualifications');
         $req_doc = ['qualificationID' => (int)$data['ID']];
-        
+
         try {
             $res_doc = $client->QUBA_GetQualificationDocuments($req_doc);
             $any_data = $res_doc->QUBA_GetQualificationDocumentsResult->any ?? '';
@@ -207,7 +289,8 @@ class Quba_Cron_Sync
                 $url = self::store_document($pdf_data, 'qualifications/purpose-statement', 'PurposeStatement_' . $data['ID']);
                 if ($url) update_post_meta($post_id, '_purpose_statement_url', $url);
             }
-        } catch (Exception $e) {}
+        } catch (Exception $e) {
+        }
 
         try {
             $res_guide = $client->QUBA_GetQualificationGuide($req_doc);
@@ -216,14 +299,16 @@ class Quba_Cron_Sync
                 $url = self::store_document($pdf_data, 'qualifications/qualification-guide', 'QualificationGuide_' . $data['ID']);
                 if ($url) update_post_meta($post_id, '_qualification_guide_url', $url);
             }
-        } catch (Exception $e) {}
+        } catch (Exception $e) {
+        }
     }
 
-    private static function process_single_unit($client, $data) {
+    private static function process_single_unit($client, $data)
+    {
         if (!isset($data['ID_Alpha']) && !isset($data['ID'])) return;
         $post_id = self::save_post_data($data, 'units');
         $unit_id = $data['ID_Alpha'] ?? $data['ID'];
-        
+
         try {
             $pdf_res = $client->QUBA_GetUnitListingDocument(['qualificationID' => (int) $data['ID']]);
             $pdfContent = $pdf_res->QUBA_GetUnitListingDocumentResult ?? '';
@@ -232,7 +317,8 @@ class Quba_Cron_Sync
                 $url = self::store_document($pdfContent, 'units/unit-listing', 'UnitListing_' . $unit_id);
                 if ($url) update_post_meta($post_id, '_unit_listing_url', $url);
             }
-        } catch (Exception $e) {}
+        } catch (Exception $e) {
+        }
 
         try {
             $qual_req = ['qualificationID' => 0, 'qualificationTitle' => '', 'qualificationLevel' => '', 'qualificationNumber' => '', 'qcaSector' => '', 'provisionType' => '', 'unitID' => $unit_id, 'includeHub' => false, 'centreID' => ''];
@@ -247,13 +333,15 @@ class Quba_Cron_Sync
                 }
                 update_post_meta($post_id, '_related_qualifications', $related_array);
             }
-        } catch (Exception $e) {}
+        } catch (Exception $e) {
+        }
     }
 
-    private static function save_post_data($data, $post_type) {
+    private static function save_post_data($data, $post_type)
+    {
         $meta_id_key = $post_type === 'units' ? ($data['ID_Alpha'] ?? $data['ID']) : $data['ID'];
         $check_id = Quba_Render::get_post_id_by_meta_field('_id', $meta_id_key);
-        
+
         $post_content = isset($data['QualificationSummary']) ? Quba_Render::santize_html($data['QualificationSummary']) : '';
         if (empty($post_content) && isset($data['Summary'])) $post_content = Quba_Render::santize_html($data['Summary']);
 
@@ -274,7 +362,8 @@ class Quba_Cron_Sync
         }
     }
 
-    private static function store_document($file_data, $path_suffix, $filename) {
+    private static function store_document($file_data, $path_suffix, $filename)
+    {
         $upload_dir = wp_upload_dir();
         $target_dir = $upload_dir['basedir'] . '/documents/' . $path_suffix;
         $target_url = $upload_dir['baseurl'] . '/documents/' . $path_suffix;
@@ -291,18 +380,20 @@ class Quba_Cron_Sync
  * Class Quba_Admin
  * Manages the backend UI for manual synchronization.
  */
-class Quba_Admin 
+class Quba_Admin
 {
-    public static function init() {
+    public static function init()
+    {
         add_action('admin_menu', [__CLASS__, 'register_menu']);
         add_action('admin_enqueue_scripts', [__CLASS__, 'enqueue_admin_scripts']);
-        
+
         // AJAX Endpoints for Manual Sync
         add_action('wp_ajax_quba_init_sync', [__CLASS__, 'ajax_init_sync']);
         add_action('wp_ajax_quba_process_batch', [__CLASS__, 'ajax_process_batch']);
     }
 
-    public static function register_menu() {
+    public static function register_menu()
+    {
         add_submenu_page(
             'tools.php',
             'QUBA Data Sync',
@@ -313,24 +404,26 @@ class Quba_Admin
         );
     }
 
-    public static function enqueue_admin_scripts($hook) {
+    public static function enqueue_admin_scripts($hook)
+    {
         if ($hook !== 'tools_page_quba-sync') return;
-        
+
         wp_enqueue_script('quba-admin-sync', plugin_dir_url(__FILE__) . 'assets/js/admin-sync.js', ['jquery'], '2.2.0', true);
         wp_localize_script('quba-admin-sync', 'qubaAdminAjax', [
             'nonce' => wp_create_nonce('quba_admin_nonce')
         ]);
     }
 
-    public static function render_admin_page() {
-        ?>
+    public static function render_admin_page()
+    {
+?>
         <div class="wrap">
             <h1>QUBA Manual Synchronization</h1>
             <p>Use this tool to manually trigger a full synchronization of Qualifications and Units from the QUBA SOAP API.</p>
-            
+
             <div style="background: #fff; padding: 20px; border: 1px solid #ccd0d4; max-width: 600px; margin-top: 20px;">
                 <button id="quba-start-sync" class="button button-primary button-large">Start Manual Sync</button>
-                
+
                 <div style="margin-top: 20px;">
                     <strong>Status:</strong> <span id="quba-sync-status">Idle. Ready to sync.</span>
                 </div>
@@ -340,21 +433,23 @@ class Quba_Admin
                 </div>
             </div>
         </div>
-        <?php
+    <?php
     }
 
-    public static function ajax_init_sync() {
+    public static function ajax_init_sync()
+    {
         check_ajax_referer('quba_admin_nonce', 'nonce');
         if (!current_user_can('manage_options')) wp_send_json_error('Unauthorized');
 
         // Trigger queue build
         $total = Quba_Cron_Sync::build_sync_queue();
-        
+
         if ($total === false) wp_send_json_error('Failed to connect to QUBA API.');
         wp_send_json_success(['total' => $total]);
     }
 
-    public static function ajax_process_batch() {
+    public static function ajax_process_batch()
+    {
         check_ajax_referer('quba_admin_nonce', 'nonce');
         if (!current_user_can('manage_options')) wp_send_json_error('Unauthorized');
 
@@ -382,7 +477,7 @@ class Quba_Render
         } else {
             $level_val = str_replace('L', ' Level ', $level);
         }
-        ?>
+    ?>
         <div class="col-lg-4 post-item">
             <div class="post-box h-100">
                 <div class="image-box image-box-placeholder">
@@ -411,7 +506,7 @@ class Quba_Render
                 </div>
             </div>
         </div>
-        <?php
+<?php
         return ob_get_clean();
     }
 
@@ -530,7 +625,7 @@ class Quba_Controllers
         }
 
         $query = new WP_Query($args);
-        
+
         if ($query->have_posts()) {
             echo '<div class="search-results-summary mb-4"><div class="results-count-display">';
             echo '<span class="results-number">' . number_format($query->found_posts) . '</span>';
@@ -578,7 +673,7 @@ class Quba_Controllers
         }
 
         $query = new WP_Query($args);
-        
+
         if ($query->have_posts()) {
             echo '<div class="search-results-summary mb-4"><div class="results-count-display">';
             echo '<span class="results-number">' . number_format($query->found_posts) . '</span>';
