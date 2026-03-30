@@ -3,76 +3,23 @@
 /**
  * Plugin Name: Quba System Integration
  * Description: Integrates QUBA SOAP API, synchronizes units/qualifications via batched processes, and provides custom native templates & meta boxes.
- * Version: 2.3.0
+ * Version: 2.3.1
  * Author: Digitally Disruptive - Donald Raymundo
  * Author URI: https://digitallydisruptive.co.uk/
  * Text Domain: quba-integration
  */
 
 if (! defined('ABSPATH')) {
-    exit;
-}
-/**
- * Retrieves a list of 'units' posts that possess a non-empty '_related_qualifications' meta value.
- *
- * This function utilizes WP_Query with a targeted meta_query clause. It explicitly 
- * filters out posts where the target meta key either doesn't exist or is stored as 
- * an empty string in the database schema.
- *
- * @param int $posts_per_page The number of posts to retrieve. Defaults to -1 (unlimited).
- * @return WP_Post[] Array of instantiated post objects matching the criteria.
- */
-function get_units_with_qualifications( int $posts_per_page = -1 ): array {
-    
-    // Define the strict query parameters for the database transaction.
-    $args = [
-        'post_type'      => 'units',
-        'posts_per_page' => $posts_per_page,
-        'post_status'    => 'publish',
-        // By skipping 'no_found_rows' => true, we allow pagination. Set to true if pagination isn't needed for performance.
-        'meta_query'     => [
-            [
-                'key'     => '_related_qualifications',
-                'value'   => '',
-                'compare' => '!=', // Evaluates against an empty string to ensure genuine data presence.
-            ],
-        ],
-    ];
-
-    // Execute the object query.
-    $unit_query = new WP_Query( $args );
-
-    // Extract and return the array of post objects, returning an empty array if the query is hollow.
-    return $unit_query->posts;
+    exit; // Exit if accessed directly.
 }
 
-/**
- * Example execution wrapper to demonstrate iteration.
- * * @return void
- */
-function display_qualified_units(){
-    ob_start();
-    $units = get_units_with_qualifications();
-
-    if ( empty( $units ) ) {
-        echo 'na';
-    }
-
-    foreach ( $units as $unit ) {
-       echo $unit->post_title;
-       echo '<br>';
-    }
-    var_dump(get_post_meta(93938));
-    return ob_get_clean();
-}
-
-add_shortcode('display_qualified_units', 'display_qualified_units');
 /**
  * Class Quba_API
  * Handles SOAP client connections and data retrieval.
  */
 class Quba_API
 {
+    /** @var SoapClient|null Singleton instance of the SOAP client. */
     private static $soap_client = null;
 
     /**
@@ -237,6 +184,7 @@ class Quba_Cron_Sync
                     $xmlString = $res->QUBA_QualificationSearchResult->any ?? '';
 
                     if ($xmlString) {
+                        libxml_use_internal_errors(true);
                         $xml = new SimpleXMLElement(Quba_API::wrap_soap_envelope('QUBA_QualificationSearch', $xmlString));
                         $quals = $xml->xpath('//QubaQualification');
                         if ($quals) {
@@ -254,6 +202,7 @@ class Quba_Cron_Sync
                                     $data['Classification2'] = trim((string) $qual->Classifications->Classification2);
                                 }
 
+                                // Strict Numeric Enforcement for Deduplication Mapping
                                 $id = $data['ID'] ?? '';
                                 if ($id && !isset($processed_quals[$id])) {
                                     $processed_quals[$id] = true;
@@ -291,6 +240,7 @@ class Quba_Cron_Sync
                 $xmlString = $res->QUBA_UnitSearchResult->any ?? '';
 
                 if ($xmlString) {
+                    libxml_use_internal_errors(true);
                     $xml = new SimpleXMLElement(Quba_API::wrap_soap_envelope('QUBA_UnitSearch', $xmlString));
                     $units = $xml->xpath('//QubaUnit');
                     if ($units) {
@@ -300,7 +250,8 @@ class Quba_Cron_Sync
                                 $data[$child->getName()] = trim((string) $child);
                             }
 
-                            $id = $data['ID_Alpha'] ?? ($data['ID'] ?? '');
+                            // Strict Numeric Enforcement for Deduplication Mapping
+                            $id = $data['ID'] ?? '';
                             if ($id && !isset($processed_units[$id])) {
                                 $processed_units[$id] = true;
                                 $queue[] = ['type' => 'units', 'data' => $data];
@@ -393,35 +344,58 @@ class Quba_Cron_Sync
      */
     private static function process_single_unit($client, $data)
     {
-        if (!isset($data['ID_Alpha']) && !isset($data['ID'])) return;
+        if (!isset($data['ID'])) return;
+
         $post_id = self::save_post_data($data, 'units');
-        $unit_id = $data['ID_Alpha'] ?? $data['ID'];
+        $numeric_id = (int)$data['ID'];
 
         try {
-            $pdf_res = $client->QUBA_GetUnitListingDocument(['qualificationID' => (int) $data['ID']]);
+            $pdf_res = $client->QUBA_GetUnitListingDocument(['qualificationID' => $numeric_id]);
             $pdfContent = $pdf_res->QUBA_GetUnitListingDocumentResult ?? '';
             if ($pdfContent) {
                 if (base64_decode($pdfContent, true) !== false) $pdfContent = base64_decode($pdfContent);
-                $url = self::store_document($pdfContent, 'units/unit-listing', 'UnitListing_' . $unit_id);
+                $url = self::store_document($pdfContent, 'units/unit-listing', 'UnitListing_' . $numeric_id);
                 if ($url) update_post_meta($post_id, '_unit_listing_url', $url);
             }
         } catch (Exception $e) {
         }
 
         try {
-            $qual_req = ['qualificationID' => 0, 'qualificationTitle' => '', 'qualificationLevel' => '', 'qualificationNumber' => '', 'qcaSector' => '', 'provisionType' => '', 'unitID' => $unit_id, 'includeHub' => false, 'centreID' => ''];
+            $qual_req = [
+                'qualificationID'     => 0,
+                'qualificationTitle'  => '',
+                'qualificationLevel'  => '',
+                'qualificationNumber' => '',
+                'qcaSector'           => '',
+                'provisionType'       => '',
+                'unitID'              => $numeric_id, // Mandatory numeric constraint
+                'includeHub'          => false,
+                'centreID'            => ''
+            ];
             $qual_res = $client->QUBA_QualificationSearch($qual_req);
             $q_xmlString = $qual_res->QUBA_QualificationSearchResult->any ?? '';
+
             if ($q_xmlString) {
+                libxml_use_internal_errors(true);
                 $q_xml = new SimpleXMLElement(Quba_API::wrap_soap_envelope('QUBA_QualificationSearch', $q_xmlString));
                 $related = $q_xml->xpath('//QubaQualification');
+
                 $related_array = [];
-                foreach ($related as $r_qual) {
-                    $related_array[] = ['title' => (string)$r_qual->Title, 'code' => (string)$r_qual->QualificationReferenceNumber, 'id' => (string)$r_qual->ID, 'level' => (string)$r_qual->Level, 'credits' => (string)$r_qual->TotalCreditsRequired];
+                if ($related) {
+                    foreach ($related as $r_qual) {
+                        $related_array[] = [
+                            'title'   => (string)$r_qual->Title,
+                            'code'    => (string)$r_qual->QualificationReferenceNumber,
+                            'id'      => (string)$r_qual->ID,
+                            'level'   => (string)$r_qual->Level,
+                            'credits' => (string)$r_qual->TotalCreditsRequired
+                        ];
+                    }
                 }
                 update_post_meta($post_id, '_related_qualifications', $related_array);
             }
         } catch (Exception $e) {
+            error_log('Relational Sync Error: ' . $e->getMessage());
         }
     }
 
@@ -433,7 +407,7 @@ class Quba_Cron_Sync
      */
     private static function save_post_data($data, $post_type)
     {
-        $meta_id_key = $post_type === 'units' ? ($data['ID_Alpha'] ?? $data['ID']) : $data['ID'];
+        $meta_id_key = $data['ID'] ?? '';
         $check_id = Quba_Render::get_post_id_by_meta_field('_id', $meta_id_key);
 
         $post_content = isset($data['QualificationSummary']) ? Quba_Render::santize_html($data['QualificationSummary']) : '';
@@ -517,7 +491,7 @@ class Quba_Admin
     {
         if ($hook !== 'tools_page_quba-sync') return;
 
-        wp_enqueue_script('quba-admin-sync', plugin_dir_url(__FILE__) . 'assets/js/admin-sync.js', ['jquery'], '2.3.0', true);
+        wp_enqueue_script('quba-admin-sync', plugin_dir_url(__FILE__) . 'assets/js/admin-sync.js', ['jquery'], '2.3.1', true);
         wp_localize_script('quba-admin-sync', 'qubaAdminAjax', [
             'nonce' => wp_create_nonce('quba_admin_nonce')
         ]);
@@ -630,7 +604,6 @@ class Quba_Admin_Meta
     {
         wp_nonce_field('quba_meta_nonce_action', 'quba_meta_nonce');
 
-        // Dynamically define required readonly UI mapping based on context.
         $api_fields = $post->post_type === 'qualifications' ? [
             '_id' => 'Qualification ID',
             '_qualificationreferencenumber' => 'Qualification Code',
@@ -745,7 +718,6 @@ class Quba_Admin_Meta
         if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) return;
         if (!current_user_can('edit_post', $post_id)) return;
 
-        // Note: API fields are ignored here to enforce the read-only directive.
         if (isset($_POST['additional_documents']) && is_array($_POST['additional_documents'])) {
             $docs = [];
             foreach ($_POST['additional_documents'] as $doc) {
@@ -756,7 +728,7 @@ class Quba_Admin_Meta
                     ];
                 }
             }
-            update_post_meta($post_id, 'additional_documents', array_values($docs)); // Reset indices sequentially
+            update_post_meta($post_id, 'additional_documents', array_values($docs));
         } else {
             delete_post_meta($post_id, 'additional_documents');
         }
@@ -877,7 +849,6 @@ class Quba_Admin_Meta
 
         <script>
             jQuery(document).ready(function($) {
-                // Tab Logic
                 $('.quba-tab-nav a').on('click', function(e) {
                     e.preventDefault();
                     $('.quba-tab-nav li').removeClass('active');
@@ -886,7 +857,6 @@ class Quba_Admin_Meta
                     $($(this).attr('href')).addClass('active');
                 });
 
-                // Repeater State Orchestration
                 var repeaterContainer = $('#quba-repeater-container');
                 var frame;
 
@@ -1116,8 +1086,8 @@ class Quba_Controllers
             is_post_type_archive('qualifications') || is_post_type_archive('units') ||
             is_singular('qualifications') || is_singular('units') || is_tax('qualifications_cat')
         ) {
-            wp_enqueue_style('quba-main-css', plugin_dir_url(__FILE__) . 'assets/css/main.css', [], '2.3.0', 'all');
-            wp_enqueue_script('quba-main-js', plugin_dir_url(__FILE__) . 'assets/js/main.js', ['jquery'], '2.3.0', true);
+            wp_enqueue_style('quba-main-css', plugin_dir_url(__FILE__) . 'assets/css/main.css', [], '2.3.1', 'all');
+            wp_enqueue_script('quba-main-js', plugin_dir_url(__FILE__) . 'assets/js/main.js', ['jquery'], '2.3.1', true);
             wp_localize_script('quba-main-js', 'qubaAjaxObj', [
                 'ajaxUrl' => admin_url('admin-ajax.php'),
                 'nonce'   => wp_create_nonce('quba_ajax_nonce')
