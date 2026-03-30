@@ -1,209 +1,627 @@
 <?php
 
 /**
- * Template Name: Unit Single
- * Description: Renders individual unit pages utilizing localized WP Meta architecture.
+ * Plugin Name: Quba System Integration
+ * Description: Integrates QUBA SOAP API, synchronizes units/qualifications, and provides custom templates.
+ * Version: 2.1.0
  * Author: Digitally Disruptive - Donald Raymundo
  * Author URI: https://digitallydisruptive.co.uk/
+ * Text Domain: quba-integration
  */
 
-get_header();
+if (! defined('ABSPATH')) {
+    exit; // Exit if accessed directly.
+}
 
-$post_id = get_the_ID();
-$id = get_post_meta($post_id, '_id_alpha', true) ?: get_post_meta($post_id, '_id', true);
+/**
+ * Class Quba_API
+ * Handles all SOAP client connections and raw data retrieval from the QUBA API.
+ */
+class Quba_API
+{
+    private static $soap_client = null;
 
-$unitPdf = get_post_meta($post_id, '_unit_listing_url', true);
-$unitQualification = get_post_meta($post_id, '_related_qualifications', true);
+    public static function get_client()
+    {
+        if (! self::$soap_client) {
+            ini_set('default_socket_timeout', 300);
+            ini_set('max_execution_time', 300);
 
-$additional_documents = get_post_meta($post_id, 'additional_documents', true);
+            try {
+                $context = stream_context_create([
+                    'http' => [
+                        'timeout'          => 300,
+                        'protocol_version' => 1.1,
+                        'header'           => "Connection: close\r\n"
+                    ]
+                ]);
+
+                self::$soap_client = new SoapClient(
+                    'https://quba.quartz-system.com/QuartzWSExtra/OCNNWR/WSQUBA_UB_V3.asmx?WSDL',
+                    [
+                        'trace'              => true,
+                        'exceptions'         => true,
+                        'cache_wsdl'         => WSDL_CACHE_NONE,
+                        'connection_timeout' => 180,
+                        'stream_context'     => $context,
+                    ]
+                );
+            } catch (Exception $e) {
+                error_log('QUBA SOAP Client Error: ' . $e->getMessage());
+                return false;
+            }
+        }
+        return self::$soap_client;
+    }
+
+    public static function get_qca_sectors()
+    {
+        try {
+            $client = self::get_client();
+            if (! $client) throw new Exception("SOAP Client not available.");
+
+            $response = $client->QUBA_GetQCASectors();
+            $xmlString = $response->QUBA_GetQCASectorsResult->any ?? '';
+
+            $responseString = self::wrap_soap_envelope('QUBA_GetQCASectors', $xmlString);
+            $xml = new SimpleXMLElement($responseString);
+            return $xml->xpath('//QubaGetSSAReferenceData');
+        } catch (Exception $e) {
+            return $e;
+        }
+    }
+
+    public static function wrap_soap_envelope($action, $xmlString)
+    {
+        $xmlString = $xmlString ? $xmlString : '';
+        return '<?xml version="1.0" encoding="utf-8"?>
+        <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+            <soap:Body>
+                <' . $action . 'Response xmlns="http://tempuri.org/">
+                    <' . $action . 'Result namespace="" tableTypeName="">
+                        ' . $xmlString . '
+                    </' . $action . 'Result>
+                </' . $action . 'Response>
+            </soap:Body>
+        </soap:Envelope>';
+    }
+}
+
+/**
+ * Class Quba_Cron_Sync
+ * Orchestrates automated mapping of API data into persistent local WP Post Types.
+ */
+class Quba_Cron_Sync
+{
+    public static function init()
+    {
+        add_action('quba_daily_sync_event', [__CLASS__, 'run_sync']);
+    }
+
+    public static function activate()
+    {
+        if (!wp_next_scheduled('quba_daily_sync_event')) {
+            wp_schedule_event(time(), 'daily', 'quba_daily_sync_event');
+        }
+    }
+
+    public static function deactivate()
+    {
+        wp_clear_scheduled_hook('quba_daily_sync_event');
+    }
+
+    /**
+     * Internal persistence sequence executed by WP-Cron.
+     */
+    public static function run_sync()
+    {
+        set_time_limit(0);
+        $client = Quba_API::get_client();
+        if (!$client) return;
+
+        self::sync_qualifications($client);
+        self::sync_units($client);
+    }
+
+    private static function sync_qualifications($client)
+    {
+        try {
+            $request = [
+                'qualificationID'     => 0,
+                'qualificationTitle'  => '',
+                'qualificationLevel'  => '',
+                'qualificationNumber' => '',
+                'qcaSector'           => '',
+                'provisionType'       => '',
+                'unitID'              => '',
+                'includeHub'          => false,
+                'centreID'            => ''
+            ];
+
+            $response = $client->QUBA_QualificationSearch($request);
+            $xmlString = $response->QUBA_QualificationSearchResult->any ?? '';
+            if (!$xmlString) return;
+
+            $xml = new SimpleXMLElement(Quba_API::wrap_soap_envelope('QUBA_QualificationSearch', $xmlString));
+            $qualifications = $xml->xpath('//QubaQualification');
+
+            foreach ($qualifications as $qual) {
+                $data = [];
+                foreach ($qual->children() as $child) {
+                    if ($child->getName() != 'Classifications') {
+                        $data[$child->getName()] = trim((string) $child);
+                    }
+                }
+                if (isset($qual->Classifications->Classification1)) {
+                    $data['Classification1'] = trim((string) $qual->Classifications->Classification1);
+                }
+                if (isset($qual->Classifications->Classification2)) {
+                    $data['Classification2'] = trim((string) $qual->Classifications->Classification2);
+                }
+
+                if (isset($data['ID'])) {
+                    $post_id = self::save_post_data($data, 'qualifications');
+
+                    // Documents extraction mapped to strict schema architecture
+                    $req_doc = ['qualificationID' => (int)$data['ID']];
+
+                    // Purpose Statement
+                    try {
+                        $res_doc = $client->QUBA_GetQualificationDocuments($req_doc);
+                        $any_data = $res_doc->QUBA_GetQualificationDocumentsResult->any ?? '';
+                        $pdf_start_pos = strpos($any_data, 'JVBERi0x');
+                        if ($pdf_start_pos !== false) {
+                            $pdf_data = base64_decode(substr($any_data, $pdf_start_pos));
+                            $url = self::store_document($pdf_data, 'qualifications/purpose-statement', 'PurposeStatement_' . $data['ID']);
+                            if ($url) update_post_meta($post_id, '_purpose_statement_url', $url);
+                        }
+                    } catch (Exception $e) {
+                        error_log('Purpose Doc Err: ' . $e->getMessage());
+                    }
+
+                    // Qualification Guide
+                    try {
+                        $res_guide = $client->QUBA_GetQualificationGuide($req_doc);
+                        $pdf_data = $res_guide->QUBA_GetQualificationGuideResult ?? '';
+                        if ($pdf_data) {
+                            $url = self::store_document($pdf_data, 'qualifications/qualification-guide', 'QualificationGuide_' . $data['ID']);
+                            if ($url) update_post_meta($post_id, '_qualification_guide_url', $url);
+                        }
+                    } catch (Exception $e) {
+                        error_log('Guide Doc Err: ' . $e->getMessage());
+                    }
+                }
+            }
+        } catch (Exception $e) {
+            error_log('Cron Qual Sync Error: ' . $e->getMessage());
+        }
+    }
+
+    private static function sync_units($client)
+    {
+        try {
+            $request = [
+                'unitID'              => 0,
+                'unitIdAlpha'         => '',
+                'unitTitle'           => '%',
+                'allOrPartTitle'      => true,
+                'unitLevel'           => '',
+                'unitCredits'         => 0,
+                'qcaSector'           => '',
+                'learnDirectCode'     => '',
+                'qcaCode'             => '',
+                'unitType'            => '',
+                'provisionType'       => '',
+                'includeHub'          => true,
+                'moduleID'            => 0,
+                'alternativeUnitCode' => '',
+            ];
+
+            $response = $client->QUBA_UnitSearch($request);
+            $xmlString = $response->QUBA_UnitSearchResult->any ?? '';
+            if (!$xmlString) return;
+
+            libxml_use_internal_errors(true);
+            $xml = new SimpleXMLElement(Quba_API::wrap_soap_envelope('QUBA_UnitSearch', $xmlString));
+            $units = $xml->xpath('//QubaUnit');
+
+            foreach ($units as $unit) {
+                $data = [];
+                foreach ($unit->children() as $child) {
+                    $data[$child->getName()] = trim((string) $child);
+                }
+
+                if (isset($data['ID_Alpha']) || isset($data['ID'])) {
+                    $post_id = self::save_post_data($data, 'units');
+                    $unit_id = $data['ID_Alpha'] ?? $data['ID'];
+
+                    // Unit Listing Document
+                    try {
+                        $pdf_res = $client->QUBA_GetUnitListingDocument(['qualificationID' => (int) $data['ID']]);
+                        $pdfContent = $pdf_res->QUBA_GetUnitListingDocumentResult ?? '';
+                        if ($pdfContent) {
+                            if (base64_decode($pdfContent, true) !== false) $pdfContent = base64_decode($pdfContent);
+                            $url = self::store_document($pdfContent, 'units/unit-listing', 'UnitListing_' . $unit_id);
+                            if ($url) update_post_meta($post_id, '_unit_listing_url', $url);
+                        }
+                    } catch (Exception $e) {
+                    }
+
+                    // Pre-cache Related Qualifications natively
+                    try {
+                        $qual_req = [
+                            'qualificationID' => 0,
+                            'qualificationTitle' => '',
+                            'qualificationLevel' => '',
+                            'qualificationNumber' => '',
+                            'qcaSector' => '',
+                            'provisionType' => '',
+                            'unitID' => $unit_id,
+                            'includeHub' => false,
+                            'centreID' => ''
+                        ];
+                        $qual_res = $client->QUBA_QualificationSearch($qual_req);
+                        $q_xmlString = $qual_res->QUBA_QualificationSearchResult->any ?? '';
+                        if ($q_xmlString) {
+                            $q_xml = new SimpleXMLElement(Quba_API::wrap_soap_envelope('QUBA_QualificationSearch', $q_xmlString));
+                            $related = $q_xml->xpath('//QubaQualification');
+                            $related_array = [];
+                            foreach ($related as $r_qual) {
+                                $related_array[] = [
+                                    'title'    => (string)$r_qual->Title,
+                                    'code'     => (string)$r_qual->QualificationReferenceNumber,
+                                    'id'       => (string)$r_qual->ID,
+                                    'level'    => (string)$r_qual->Level,
+                                    'credits'  => (string)$r_qual->TotalCreditsRequired,
+                                ];
+                            }
+                            update_post_meta($post_id, '_related_qualifications', $related_array);
+                        }
+                    } catch (Exception $e) {
+                    }
+                }
+            }
+        } catch (Exception $e) {
+            error_log('Cron Unit Sync Error: ' . $e->getMessage());
+        }
+    }
+
+    private static function save_post_data($data, $post_type)
+    {
+        $meta_id_key = $post_type === 'units' ? ($data['ID_Alpha'] ?? $data['ID']) : $data['ID'];
+        $check_id = Quba_Render::get_post_id_by_meta_field('_id', $meta_id_key);
+
+        $post_content = isset($data['QualificationSummary']) ? Quba_Render::santize_html($data['QualificationSummary']) : '';
+        if (empty($post_content) && isset($data['Summary'])) {
+            $post_content = Quba_Render::santize_html($data['Summary']);
+        }
+
+        $meta_input = [];
+        foreach ($data as $key => $val) {
+            $meta_input['_' . strtolower($key)] = $val;
+        }
+        $meta_input['_id'] = $meta_id_key; // Enforce explicit master mapping
+
+        $post_data = [
+            'post_type'    => $post_type,
+            'post_title'   => $data['Title'],
+            'post_status'  => 'publish',
+            'post_content' => $post_content,
+            'meta_input'   => $meta_input
+        ];
+
+        if ($check_id) {
+            $post_data['ID'] = $check_id;
+            wp_update_post($post_data);
+            return $check_id;
+        } else {
+            return wp_insert_post($post_data);
+        }
+    }
+
+    private static function store_document($file_data, $path_suffix, $filename)
+    {
+        $upload_dir = wp_upload_dir();
+        $target_dir = $upload_dir['basedir'] . '/documents/' . $path_suffix;
+        $target_url = $upload_dir['baseurl'] . '/documents/' . $path_suffix;
+
+        if (!file_exists($target_dir)) {
+            wp_mkdir_p($target_dir);
+        }
+
+        $filepath = $target_dir . '/' . $filename . '.pdf';
+        if (file_put_contents($filepath, $file_data) !== false) {
+            return $target_url . '/' . $filename . '.pdf';
+        }
+        return false;
+    }
+}
+
+/**
+ * Class Quba_Render
+ * Manages the generation of UI HTML. Decoupled from logic parsing.
+ */
+class Quba_Render
+{
+    public static function qual_grid($post_id, $post_type = 'qualifications')
+    {
+        ob_start();
+        $level = get_post_meta($post_id, '_level', true);
+        $title = get_the_title($post_id);
+
+        if (in_array($level, ['E1', 'E2', 'E3'])) {
+            $level_val = str_replace('E', ' Entry Level ', $level);
+        } else {
+            $level_val = str_replace('L', ' Level ', $level);
+        }
 ?>
-
-<div id="primary" class="row-fluid">
-    <div id="content" role="main" class="span8 offset2">
-        <section class="hero-style-1"
-            style="background-image: url(https://openawards.theprogressteam.com/wp-content/uploads/2024/12/qual-hero-bg.png)">
-            <div class="container">
-                <div class="title-box">
-                    <h1><?php the_title() ?></h1>
+        <div class="col-lg-4 post-item">
+            <div class="post-box h-100">
+                <div class="image-box image-box-placeholder">
+                    <img src="<?= get_site_url() ?>/wp-content/uploads/2023/10/logo-new.svg" alt="Logo">
+                    <span class="level <?= esc_attr($level) ?>">
+                        <span class="level-badge">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-check2" viewBox="0 0 16 16">
+                                <path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0" />
+                            </svg><?= wp_kses_post($level_val) ?>
+                        </span>
+                    </span>
                 </div>
-                <div class="key-information-box">
-                    <h3>Key Information</h3>
-                    <div class="key-information-holder">
-                        <div class="row">
-                            <div class="col-sm-6">
-                                <div class="key-info-items">
-                                    <div class="key-info-item"><strong>Unit Code:</strong> <?= esc_html(get_post_meta($post_id, '_nationalcode', true) ?: 'N/A') ?></div>
-                                    <div class="key-info-item"><strong>Open Awards Unit ID:</strong> <?= esc_html(get_post_meta($post_id, '_id_alpha', true) ?: 'N/A') ?></div>
-                                    <?php
-                                    $level = get_post_meta($post_id, '_level', true);
-                                    if (!empty($level)) {
-                                        if (strpos($level, 'E') === 0) $level = 'Entry Level ' . substr($level, 1);
-                                        elseif (strpos($level, 'L') === 0) $level = 'Level ' . substr($level, 1);
-                                    }
-                                    ?>
-                                    <div class="key-info-item"><strong>Level:</strong> <?= $level ? esc_html($level) : 'N/A' ?></div>
-                                    <div class="key-info-item"><strong>Sector:</strong> <?= esc_html(get_post_meta($post_id, '_qcasector', true) ?: 'N/A') ?></div>
-                                    <div class="key-info-item"><strong>Credit Value:</strong> <?= esc_html(get_post_meta($post_id, '_credits', true) ?: 'N/A') ?></div>
-                                    <div class="key-info-item"><strong>Risk Rating:</strong> <?= esc_html(get_post_meta($post_id, '_classification2', true) ?: 'N/A') ?></div>
-                                </div>
-                            </div>
-                            <div class="col-sm-6">
-                                <div class="key-info-items">
-                                    <div class="key-info-item"><strong>Unit Type:</strong> <?= esc_html(get_post_meta($post_id, '_classification3', true) ?: 'N/A') ?></div>
-                                    <div class="key-info-item"><strong>Start Date:</strong> <?= get_post_meta($post_id, '_recognitiondate', true) ? date('d F Y', strtotime(get_post_meta($post_id, '_recognitiondate', true))) : 'N/A' ?></div>
-                                    <div class="key-info-item"><strong>Review Date:</strong> <?= get_post_meta($post_id, '_reviewdate', true) ? date('d F Y', strtotime(get_post_meta($post_id, '_reviewdate', true))) : 'N/A' ?></div>
-                                    <div class="key-info-item"><strong>End Date:</strong> <?= get_post_meta($post_id, '_expirydate', true) ? date('d F Y', strtotime(get_post_meta($post_id, '_expirydate', true))) : 'N/A' ?></div>
-                                    <div class="key-info-item"><strong>Guided Learning Hours:</strong> <?= esc_html(get_post_meta($post_id, '_glh', true) ?: 'N/A') ?></div>
-                                </div>
-                            </div>
+                <div class="content-box content-box-v1">
+                    <div class="heading-excerpt-box">
+                        <div class="heading-box">
+                            <h4><?= esc_html($title) ?></h4>
                         </div>
                     </div>
                 </div>
-            </div>
-        </section>
-
-        <section class="info-boxes">
-            <div class="container">
-                <div class="row g-4">
-
-                    <?php if ($unitPdf): ?>
-                        <div class="col-12">
-                            <div class="info-box">
-                                <div class="inner justify-content-start mx-0 mw-100">
-                                    <h2 class="h3-style-1">Unit Content (PDF)</h2>
-                                    <div class="button-box-v2 button-primary">
-                                        <a href="<?php echo esc_url($unitPdf); ?>" target="_blank" rel="noopener noreferrer">Download PDF</a>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    <?php endif; ?>
-
-                    <div class="col-12">
-                        <div class="info-box">
-                            <div class="inner mx-0 mw-100">
-                                <div class="related-qualifications-container mx-0 mw-100">
-                                    <h2 class="h3-style-1">RELATED QUALIFICATIONS</h2>
-                                    <?php
-                                    if (empty($unitQualification)) {
-                                        echo '<div>No related qualifications are currently available for this unit.</div>';
-                                    } else {
-                                        foreach ($unitQualification as $index => $qualification) {
-                                            $expandButton = '+';
-
-                                            $mapped_post_id = Quba_Render::get_post_id_by_meta_field('_id', $qualification['id']);
-                                            if (!$mapped_post_id) {
-                                                $mapped_post_id = Quba_Render::get_post_id_by_meta_field('_qualificationreferencenumber', $qualification['code']);
-                                            }
-                                            if (!$mapped_post_id) {
-                                                $title_slug = sanitize_title($qualification['title']);
-                                                $code_part = preg_replace('/[^a-zA-Z0-9]+/', '', $qualification['code']);
-                                                $post = get_page_by_path($title_slug . '-' . $code_part, OBJECT, 'qualifications');
-                                                if ($post) $mapped_post_id = $post->ID;
-                                            }
-
-                                            $qualification_link = $mapped_post_id ? get_permalink($mapped_post_id) : home_url('/qualifications/' . sanitize_title($qualification['title']) . '-' . preg_replace('/[^a-zA-Z0-9]+/', '', $qualification['code']));
-                                    ?>
-                                            <div class="qualification-box" data-index="<?php echo $index; ?>">
-                                                <div class="qualification-header">
-                                                    <span>
-                                                        <a href="<?php echo esc_url($qualification_link); ?>" target="_blank" style="color: #000;">
-                                                            <?php echo esc_html($qualification['title']); ?>
-                                                        </a>
-                                                    </span>
-                                                    <button class="expand-btn"><?php echo $expandButton; ?></button>
-                                                </div>
-                                                <div class="qualification-details" style="display: none;">
-                                                    <div class="detail-row">
-                                                        <span class="detail-label">Qualification Code:</span>
-                                                        <span class="detail-value"><?php echo esc_html($qualification['code']); ?></span>
-                                                    </div>
-                                                    <?php
-                                                    $level = $qualification['level'];
-                                                    if (!empty($level)) {
-                                                        if (strpos($level, 'E') === 0) $level = 'Entry Level ' . str_replace('E', '', $level);
-                                                        elseif (strpos($level, 'L') === 0) $level = 'Level ' . str_replace('L', '', $level);
-                                                    }
-                                                    ?>
-                                                    <div class="detail-row">
-                                                        <span class="detail-label">Level:</span>
-                                                        <span class="detail-value"><?php echo esc_html($level); ?></span>
-                                                    </div>
-                                                    <div class="detail-row">
-                                                        <span class="detail-label">Minimum Credits:</span>
-                                                        <span class="detail-value"><?php echo esc_html($qualification['credits']); ?></span>
-                                                    </div>
-                                                    <div class="button-box-v2 button-accent">
-                                                        <a href="<?php echo esc_url($qualification_link); ?>">View Qualification</a>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                    <?php
-                                        }
-                                    }
-                                    ?>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <?php if ($additional_documents): ?>
-                        <div class="col-lg-6">
-                            <div class="info-box">
-                                <div class="inner">
-                                    <h2 class="h2-style-1">Additional documents<span>.</span></h2>
-                                    <?php foreach ($additional_documents as $doc): ?>
-                                        <ul class="additional-documents">
-                                            <li>
-                                                <h3><?= esc_html($doc['document_title']) ?></h3>
-                                            </li>
-                                        </ul>
-                                        <div class="button-box-v2 button-primary">
-                                            <a href="<?= esc_url(wp_get_attachment_url($doc['document_file'])) ?>" target="_blank">View Document</a>
-                                        </div>
-                                    <?php endforeach; ?>
-                                </div>
-                            </div>
-                        </div>
-                    <?php endif; ?>
-
-                    <?php if (get_the_content()): ?>
-                        <div class="col-12">
-                            <div class="info-box info-box-v2">
-                                <div class="inner">
-                                    <div class="row align-items-center g-3">
-                                        <div class="col">
-                                            <?php the_content() ?>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    <?php endif; ?>
-
-                </div>
-                <div class="back-to mt-4">
-                    <div class="button-box-v2 button-accent">
-                        <a href="/units/"><svg class="me-2" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-                                fill="currentColor" class="bi bi-chevron-left" viewBox="0 0 16 16">
-                                <path fill-rule="evenodd"
-                                    d="M11.354 1.646a.5.5 0 0 1 0 .708L5.707 8l5.647 5.646a.5.5 0 0 1-.708.708l-6-6a.5.5 0 0 1 0-.708l6-6a.5.5 0 0 1 .708 0" />
-                            </svg> Back to Units</a>
+                <div class="button-group-box row g-0 align-items-center">
+                    <div class="button-box-v2 button-accent col">
+                        <a class="w-100 text-center" href="<?= esc_url(get_the_permalink($post_id)) ?>">
+                            <?= $post_type == "units" ? "View Unit" : "View Course" ?>
+                        </a>
                     </div>
                 </div>
             </div>
-        </section>
+        </div>
+<?php
+        return ob_get_clean();
+    }
 
-        <section class="related-qualifications archive-section archive-section-qualifications pt-0">
-            <div class="container">
-                <h2 class="h2-style-1">
-                    Explore our Units
-                </h2>
-                <?= do_shortcode('[related_units]') ?>
-            </div>
-        </section>
+    public static function unit_grid($post_id, $post_type = 'units')
+    {
+        return self::qual_grid($post_id, $post_type);
+    }
 
-        <?= do_shortcode('[template template_id=2969]') ?>
-    </div>
-</div>
-<?php get_footer(); ?>
+    public static function generate_error_output($msg)
+    {
+        return '<div class="error-message"><p>An error occurred: ' . esc_html($msg) . '</p></div>';
+    }
+
+    public static function get_post_id_by_meta_field($meta_key, $meta_value)
+    {
+        global $wpdb;
+        $query = $wpdb->prepare(
+            "SELECT pm.post_id FROM $wpdb->postmeta pm JOIN $wpdb->posts p ON pm.post_id = p.ID WHERE pm.meta_key = %s AND pm.meta_value = %s AND p.post_status = 'publish' LIMIT 1",
+            $meta_key,
+            $meta_value
+        );
+        return $wpdb->get_var($query);
+    }
+
+    public static function santize_html($html)
+    {
+        $html = str_replace('SPANstyle;', 'span style', $html);
+        $html = html_entity_decode($html);
+        $html = str_replace('&nbsp;', '', $html);
+        $html = preg_replace('/<([a-z][a-z0-9]*)([^>]*?)>/i', '<$1>', $html);
+        $html = preg_replace("/<[^\/>]*>([\s]?)*<\/[^>]*>/", '', $html);
+        return $html;
+    }
+}
+
+/**
+ * Class Quba_Controllers
+ * Intercepts WP actions natively prioritizing local caching architecture.
+ */
+class Quba_Controllers
+{
+    public static function init()
+    {
+        add_action('wp_enqueue_scripts', [__CLASS__, 'enqueue_assets']);
+
+        add_action('wp_ajax_nopriv_archive_ajax_qualifications', [__CLASS__, 'archive_ajax_qualifications']);
+        add_action('wp_ajax_archive_ajax_qualifications', [__CLASS__, 'archive_ajax_qualifications']);
+
+        add_action('wp_ajax_nopriv_archive_ajax_units', [__CLASS__, 'archive_ajax_units']);
+        add_action('wp_ajax_archive_ajax_units', [__CLASS__, 'archive_ajax_units']);
+
+        add_shortcode('related_qualifications', [__CLASS__, 'shortcode_related_qualifications']);
+        add_shortcode('related_units', [__CLASS__, 'shortcode_related_units']);
+
+        add_filter('template_include', [__CLASS__, 'route_templates'], 99);
+    }
+
+    public static function enqueue_assets()
+    {
+        if (
+            is_post_type_archive('qualifications') || is_post_type_archive('units') ||
+            is_singular('qualifications') || is_singular('units') || is_tax('qualifications_cat')
+        ) {
+            wp_enqueue_style('quba-main-css', plugin_dir_url(__FILE__) . 'assets/css/main.css', [], '2.1.0', 'all');
+            wp_enqueue_script('quba-main-js', plugin_dir_url(__FILE__) . 'assets/js/main.js', ['jquery'], '2.1.0', true);
+            wp_localize_script('quba-main-js', 'qubaAjaxObj', [
+                'ajaxUrl' => admin_url('admin-ajax.php'),
+                'nonce'   => wp_create_nonce('quba_ajax_nonce')
+            ]);
+        }
+    }
+
+    public static function route_templates($template)
+    {
+        if (is_post_type_archive('qualifications') || is_post_type_archive('units') || is_tax('qualifications_cat')) {
+            $plugin_archive = plugin_dir_path(__FILE__) . 'templates/archive-qualifications.php';
+            if (file_exists($plugin_archive)) return $plugin_archive;
+        }
+
+        if (is_singular('qualifications')) {
+            $plugin_single = plugin_dir_path(__FILE__) . 'templates/single-qualifications.php';
+            if (file_exists($plugin_single)) return $plugin_single;
+        }
+
+        if (is_singular('units')) {
+            $plugin_single_unit = plugin_dir_path(__FILE__) . 'templates/single-units.php';
+            if (file_exists($plugin_single_unit)) return $plugin_single_unit;
+        }
+
+        return $template;
+    }
+
+    /**
+     * WP_Query translation of API payload inputs enforcing local DB fetches
+     */
+    public static function archive_ajax_qualifications()
+    {
+        $args = [
+            'post_type'      => 'qualifications',
+            'posts_per_page' => -1,
+            'post_status'    => 'publish',
+            'meta_query'     => ['relation' => 'AND']
+        ];
+
+        if (!empty($_POST['qualificationTitle']) && $_POST['qualificationTitle'] !== 'e') {
+            $args['s'] = sanitize_text_field($_POST['qualificationTitle']);
+        }
+        if (!empty($_POST['qualificationLevel']) && trim($_POST['qualificationLevel']) !== '') {
+            $args['meta_query'][] = ['key' => '_level', 'value' => sanitize_text_field($_POST['qualificationLevel']), 'compare' => '='];
+        }
+        if (!empty($_POST['qcaSector'])) {
+            $args['meta_query'][] = ['key' => '_classification1', 'value' => sanitize_text_field($_POST['qcaSector']), 'compare' => 'LIKE'];
+        }
+        if (!empty($_POST['qualificationNumber'])) {
+            $args['meta_query'][] = ['key' => '_qualificationreferencenumber', 'value' => sanitize_text_field($_POST['qualificationNumber']), 'compare' => 'LIKE'];
+        }
+        if (!empty($_POST['qualificationType'])) {
+            $args['meta_query'][] = ['key' => '_type', 'value' => sanitize_text_field($_POST['qualificationType']), 'compare' => 'LIKE'];
+        }
+
+        $query = new WP_Query($args);
+
+        if ($query->have_posts()) {
+            echo '<div class="search-results-summary mb-4"><div class="results-count-display">';
+            echo '<span class="results-number">' . number_format($query->found_posts) . '</span>';
+            echo '<span class="results-text"> Qualification' . ($query->found_posts !== 1 ? 's' : '') . ' Found</span></div></div>';
+            echo '<div class="row row-results g-5">';
+            while ($query->have_posts()) {
+                $query->the_post();
+                echo Quba_Render::qual_grid(get_the_ID(), 'qualifications');
+            }
+            echo '</div>';
+            wp_reset_postdata();
+        } else {
+            echo '<div class="no-results-message"><p>No qualifications found matching your criteria.</p></div>';
+        }
+        wp_die();
+    }
+
+    public static function archive_ajax_units()
+    {
+        $args = [
+            'post_type'      => 'units',
+            'posts_per_page' => -1,
+            'post_status'    => 'publish',
+            'meta_query'     => ['relation' => 'AND']
+        ];
+
+        if (!empty($_POST['unitTitle'])) {
+            $args['s'] = sanitize_text_field($_POST['unitTitle']);
+        }
+        if (!empty($_POST['unitLevel'])) {
+            $args['meta_query'][] = ['key' => '_level', 'value' => sanitize_text_field($_POST['unitLevel']), 'compare' => '='];
+        }
+        if (!empty($_POST['qcaSector'])) {
+            $args['meta_query'][] = ['key' => '_qcasector', 'value' => sanitize_text_field($_POST['qcaSector']), 'compare' => 'LIKE'];
+        }
+        if (!empty($_POST['qcaCode'])) {
+            $args['meta_query'][] = [
+                'relation' => 'OR',
+                ['key' => '_nationalcode', 'value' => sanitize_text_field($_POST['qcaCode']), 'compare' => 'LIKE'],
+                ['key' => '_id_alpha', 'value' => sanitize_text_field($_POST['qcaCode']), 'compare' => 'LIKE']
+            ];
+        }
+        if (!empty($_POST['unitID'])) {
+            $args['meta_query'][] = ['key' => '_id_alpha', 'value' => sanitize_text_field($_POST['unitID']), 'compare' => '='];
+        }
+
+        $query = new WP_Query($args);
+
+        if ($query->have_posts()) {
+            echo '<div class="search-results-summary mb-4"><div class="results-count-display">';
+            echo '<span class="results-number">' . number_format($query->found_posts) . '</span>';
+            echo '<span class="results-text"> Unit' . ($query->found_posts !== 1 ? 's' : '') . ' Found</span></div></div>';
+            echo '<div class="row row-results g-5">';
+            while ($query->have_posts()) {
+                $query->the_post();
+                echo Quba_Render::unit_grid(get_the_ID(), 'units');
+            }
+            echo '</div>';
+            wp_reset_postdata();
+        } else {
+            echo '<div class="no-results-message"><p>No units found matching your criteria.</p></div>';
+        }
+        wp_die();
+    }
+
+    public static function shortcode_related_qualifications()
+    {
+        ob_start();
+        $level = get_post_meta(get_the_ID(), '_level', true);
+        $args = [
+            'post_type'   => 'qualifications',
+            'numberposts' => 3,
+            'orderby'     => 'rand',
+            'meta_query'  => ['relation' => 'AND']
+        ];
+
+        if ($level) {
+            $args['meta_query'][] = ['key' => '_level', 'value' => $level, 'compare' => '='];
+        }
+
+        $posts = get_posts($args);
+        echo '<div class="row row-results g-5">';
+        foreach ($posts as $post) {
+            echo Quba_Render::qual_grid($post->ID, 'qualifications');
+        }
+        echo '</div>';
+        return ob_get_clean();
+    }
+
+    public static function shortcode_related_units()
+    {
+        ob_start();
+        $level = get_post_meta(get_the_ID(), '_level', true);
+        $args = [
+            'post_type'   => 'units',
+            'numberposts' => 3,
+            'orderby'     => 'rand',
+            'meta_query'  => ['relation' => 'AND']
+        ];
+
+        if ($level) {
+            $args['meta_query'][] = ['key' => '_level', 'value' => $level, 'compare' => '='];
+        }
+
+        $posts = get_posts($args);
+        echo '<div class="row row-results g-5">';
+        foreach ($posts as $post) {
+            echo Quba_Render::unit_grid($post->ID, 'units');
+        }
+        echo '</div>';
+        return ob_get_clean();
+    }
+}
+
+// Bootstrap
+Quba_Cron_Sync::init();
+register_activation_hook(__FILE__, ['Quba_Cron_Sync', 'activate']);
+register_deactivation_hook(__FILE__, ['Quba_Cron_Sync', 'deactivate']);
+add_action('plugins_loaded', ['Quba_Controllers', 'init']);

@@ -9,36 +9,36 @@ jQuery(document).ready(function ($) {
     initAccordion();
 
     if ($('#qualification-filter').length > 0) {
-
+        
         setActiveTabFromParams();
         loadSavedFilters();
         bindSearchTriggers();
 
         // Standardized on local indexing. Bypass SOAP logic unconditionally.
-        performSearch();
+        performSearch(); 
     }
 
     function initAccordion() {
         $('#glh').val('');
         $('#tqt').val('');
 
-        $('.qualification-header').on('click', function (e) {
-            if ($(e.target).is('a')) return;
+        $('.qualification-header').on('click', function(e) {
+            if ($(e.target).is('a')) return; 
 
             var $box = $(this).closest('.qualification-box');
             var $expandBtn = $(this).find('.expand-btn');
             var $details = $box.find('.qualification-details');
-
+            
             var isExpanded = $box.hasClass('expanded');
-
+            
             $('.qualification-box').removeClass('expanded');
             $('.qualification-box .expand-btn').text('+');
-            $('.qualification-box .qualification-details').slideUp(250);
-
+            $('.qualification-box .qualification-details').slideUp(250); 
+            
             if (!isExpanded) {
                 $box.addClass('expanded');
                 $expandBtn.text('−');
-                $details.slideDown(250);
+                $details.slideDown(250); 
             }
         });
     }
@@ -48,42 +48,42 @@ jQuery(document).ready(function ($) {
         const post_type = urlParams.get('post_type') || 'qualifications';
 
         const activeButton = $(`.search-change-trigger[post_type="${post_type}"]`);
-
+        
         if (activeButton.length) {
             $('.filter-button').removeClass('filter-active');
             activeButton.parent().addClass('filter-active');
-
+            
             const search_type = activeButton.attr('search_type');
             $('.search-field').addClass('d-none');
             $(search_type).removeClass('d-none');
-
+            
             $('#qualification-filter').attr('search_type', post_type);
         }
     }
 
     function hasSearchParams() {
         const urlParams = new URLSearchParams(window.location.search);
-        return urlParams.has('Title') ||
-            urlParams.has('qualificationNumber') ||
-            urlParams.has('Level') ||
-            urlParams.has('qcaSector') ||
-            urlParams.has('qualificationType') ||
-            urlParams.has('qcaCode') ||
-            urlParams.has('unitID');
+        return urlParams.has('Title') || 
+               urlParams.has('qualificationNumber') || 
+               urlParams.has('Level') || 
+               urlParams.has('qcaSector') ||
+               urlParams.has('qualificationType') ||
+               urlParams.has('qcaCode') ||
+               urlParams.has('unitID');
     }
 
     function loadSavedFilters() {
         const urlParams = new URLSearchParams(window.location.search);
-
-        $('.trigger-type').each(function () {
+        
+        $('.trigger-type').each(function() {
             const name = $(this).attr('name');
             const value = urlParams.get(name);
             if (value) {
                 $(this).val(value);
             }
         });
-
-        $('.trigger-ajax-change').each(function () {
+        
+        $('.trigger-ajax-change').each(function() {
             const name = $(this).attr('name');
             const value = urlParams.get(name);
             if (value) {
@@ -97,13 +97,13 @@ jQuery(document).ready(function ($) {
         const post_type = $('#qualification-filter').attr('search_type');
         filters['post_type'] = post_type;
 
-        $('.search-field:not(.d-none) .trigger-type').each(function () {
+        $('.search-field:not(.d-none) .trigger-type').each(function() {
             const name = $(this).attr('name');
             const value = $(this).val();
             if (value) filters[name] = value;
         });
-
-        $('.search-field:not(.d-none) .trigger-ajax-change').each(function () {
+        
+        $('.search-field:not(.d-none) .trigger-ajax-change').each(function() {
             const name = $(this).attr('name');
             const value = $(this).val();
             if (value) filters[name] = value;
@@ -113,7 +113,7 @@ jQuery(document).ready(function ($) {
         for (const key in filters) {
             urlParams.set(key, filters[key]);
         }
-
+        
         const newUrl = window.location.pathname + '?' + urlParams.toString();
         window.history.replaceState({}, '', newUrl);
     }
@@ -121,7 +121,7 @@ jQuery(document).ready(function ($) {
     function bindSearchTriggers() {
         $('.trigger-type').on('keyup', function () {
             clearTimeout(typingTimer);
-            typingTimer = setTimeout(function () {
+            typingTimer = setTimeout(function() {
                 saveFilters();
                 performSearch();
             }, doneTypingInterval);
@@ -141,7 +141,7 @@ jQuery(document).ready(function ($) {
 
             $('#qualification-filter').attr('search_type', postType);
             $('.qualification-filter-holder').addClass('searching');
-
+            
             $('.filter-button').removeClass('filter-active');
             $this.parent().addClass('filter-active');
 
@@ -160,25 +160,25 @@ jQuery(document).ready(function ($) {
     function performSearch() {
         var activePostType = $('#qualification-filter').attr('search_type') || 'qualifications';
         var actionName = activePostType === 'units' ? 'archive_ajax_units' : 'archive_ajax_qualifications';
-
+        
         var searchData = {
             action: actionName,
             nonce: qubaAjaxObj.nonce,
-            qualificationTitle: $('input[name="Title"]').val(),
-            unitTitle: $('input[name="Title"]').val(),
+            qualificationTitle:  $('input[name="Title"]').val(),
+            unitTitle:           $('input[name="Title"]').val(), 
             qualificationNumber: $('input[name="qualificationNumber"]').val(),
-            qcaCode: $('input[name="qcaCode"]').val(),
-            unitID: $('input[name="unitID"]').val() || $('input[name="open_awards_unit_id"]').val(),
-            qualificationLevel: $('#level').val(),
-            unitLevel: $('#level').val(),
-            qcaSector: $('#qcaSector').val(),
-            qualificationType: $('#type').val(),
-            unitType: $('#unitType').val()
+            qcaCode:             $('input[name="qcaCode"]').val(),
+            unitID:              $('input[name="unitID"]').val() || $('input[name="open_awards_unit_id"]').val(),
+            qualificationLevel:  $('#level').val(),
+            unitLevel:           $('#level').val(),
+            qcaSector:           $('#qcaSector').val(),
+            qualificationType:   $('#type').val(),
+            unitType:            $('#unitType').val()
         };
 
         var $resultsHolder = $('.results-holder');
         var $spinner = $('.spinner-holder');
-
+        
         $spinner.show();
         $resultsHolder.fadeTo(200, 0.4);
 

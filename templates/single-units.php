@@ -1,134 +1,20 @@
 <?php 
 /**
  * Template Name: Unit Single
- * Description: Renders individual unit pages utilizing the Quba_API OOP wrapper.
+ * Description: Renders individual unit pages utilizing localized WP Meta architecture.
  * Author: Digitally Disruptive - Donald Raymundo
  * Author URI: https://digitallydisruptive.co.uk/
  */
 
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-
 get_header(); 
 
-// Try to get ID_Alpha from Carbon
-$id = carbon_get_the_post_meta('id');
+$post_id = get_the_ID();
+$id = get_post_meta($post_id, '_id_alpha', true) ?: get_post_meta($post_id, '_id', true);
 
-// If Carbon is empty, try WordPress native meta (as a backup)
-if (empty($id)) {
-    $id = get_post_meta(get_the_ID(), 'ID_Alpha', true);
-}
+$unitPdf = get_post_meta($post_id, '_unit_listing_url', true);
+$unitQualification = get_post_meta($post_id, '_related_qualifications', true);
 
-// Debug: show what we're actually passing to the API
-echo "";
-
-/**
- * Fetch dynamic unit data from the QUBA SOAP API via the Quba_API wrapper.
- * Returns a stdClass object containing unit parameters or an error state.
- */
-$unitDetails = Quba_API::unit_search_by_id($id);
-
-// Establish execution states for secondary SOAP Extractions
-$unitPdf = false;
-$unitQualification = [];
-
-try {
-    // Utilize centralized SOAP object creation methodology
-    $client = Quba_API::get_client();
-    
-    if ( $client && !empty($id) ) {
-        
-        // 1. Fetch Unit Listing Document stream locally onto plugin storage
-        try {
-            $pdf_response = $client->QUBA_GetUnitListingDocument(['qualificationID' => (int) $id]);
-            
-            if (isset($pdf_response->QUBA_GetUnitListingDocumentResult) && !empty($pdf_response->QUBA_GetUnitListingDocumentResult)) {
-                $pdfContent = $pdf_response->QUBA_GetUnitListingDocumentResult;
-                
-                // Decode payload dynamically avoiding strictly encoded base64 drops
-                if (base64_decode($pdfContent, true) !== false) {
-                    $pdfContent = base64_decode($pdfContent);
-                }
-                
-                $upload_dir = wp_upload_dir();
-                $fileName = "UnitListing_" . (int)$id . ".pdf";
-                $filePath = $upload_dir['path'] . "/" . $fileName;
-                
-                if (file_put_contents($filePath, $pdfContent) !== false) {
-                    $unitPdf = $upload_dir['url'] . "/" . $fileName;
-                }
-            }
-        } catch (Exception $e) {
-            // Failsafe suppressing DBNull errors for missing documents
-            if (strpos($e->getMessage(), "DBNull") === false) {
-                error_log('SOAP Unit Document Retrieval Error: ' . $e->getMessage());
-            }
-        }
-
-        // 2. Fetch Related Qualifications mapped to this Unit ID
-        try {
-            $qual_request = [
-                'qualificationID'     => 0,
-                'qualificationTitle'  => '',
-                'qualificationLevel'  => '',
-                'qualificationNumber' => '',
-                'qcaSector'           => '',
-                'provisionType'       => '',
-                'unitID'              => $id,
-                'includeHub'          => false,
-                'centreID'            => ''
-            ];
-            $qual_response = $client->QUBA_QualificationSearch($qual_request);
-            $xmlString = $qual_response->QUBA_QualificationSearchResult->any ?? '';
-            
-            if ($xmlString) {
-                // Wrapper construct mapping identical to the API handler scope
-                $responseString = '<?xml version="1.0" encoding="utf-8"?>
-                <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-                    <soap:Body>
-                        <QUBA_QualificationSearchResponse xmlns="http://tempuri.org/">
-                            <QUBA_QualificationSearchResult namespace="" tableTypeName="">
-                                ' . $xmlString . '
-                            </QUBA_QualificationSearchResult>
-                        </QUBA_QualificationSearchResponse>
-                    </soap:Body>
-                </soap:Envelope>';
-                
-                libxml_use_internal_errors(true);
-                $xml = new SimpleXMLElement($responseString);
-                $unitQualification = $xml->xpath('//QubaQualification') ?: [];
-            }
-        } catch (Exception $e) {
-            error_log('QUBA Qualification Search Error: ' . $e->getMessage());
-        }
-    }
-} catch (Exception $e) {
-    error_log('SOAP Client Instantiation Error: ' . $e->getMessage());
-}
-
-/**
- * Helper function to output formatted key info nodes.
- * * @param string $key Meta field target.
- * @param string $label Visual output mapping string.
- * @param string $type Output evaluation type formatting.
- * @return string Valid HTML string DOM structure.
- */
-function key_info($key, $label, $type = 'string') {
-    $keyinfo = carbon_get_the_post_meta($key);
-
-    if ($type == 'date' && $keyinfo) {
-        $originalDate = $keyinfo;
-        $keyinfo = date("d F Y", strtotime($originalDate));
-    } else if (!$keyinfo) {
-        $keyinfo = false;
-    }
-    
-    if ($keyinfo) {
-        return "<div class='key-info-item'><strong>" . esc_html($label) . ":</strong> " . esc_html($keyinfo) . "</div>";
-    }
-}
-
-$additional_documents = carbon_get_the_post_meta('additional_documents');
+$additional_documents = get_post_meta($post_id, 'additional_documents', true);
 ?>
 
 <div id="primary" class="row-fluid">
@@ -143,45 +29,32 @@ $additional_documents = carbon_get_the_post_meta('additional_documents');
                     <h3>Key Information</h3>
                     <div class="key-information-holder">
                         <div class="row">
-                            <?php if (!isset($unitDetails->error)) { ?>
-                                <div class="col-sm-6">
-                                    <div class="key-info-items">
-                                        <div class="key-info-item"><strong>Unit Code:</strong> <?= !empty($unitDetails->NationalCode) ? htmlentities($unitDetails->NationalCode) : 'N/A'; ?></div>
-                                        <div class="key-info-item"><strong>Open Awards Unit ID:</strong> <?= !empty($unitDetails->ID_Alpha) ? htmlentities($unitDetails->ID_Alpha) : 'N/A'; ?></div>
-                                            <?php
-                                            $level = $unitDetails->Level ?? '';
-                                            
-                                            if (!empty($level)) {
-                                                if (strpos($level, 'E') === 0) {
-                                                    $level = 'Entry Level ' . substr($level, 1);
-                                                } elseif (strpos($level, 'L') === 0) {
-                                                    $level = 'Level ' . substr($level, 1);
-                                                }
-                                            }
-                                            ?>
-                                            <div class="key-info-item">
-                                                <strong>Level:</strong> <?= $level ? htmlentities($level) : 'N/A'; ?>
-                                            </div>
-                                        <div class="key-info-item"><strong>Sector:</strong> <?= !empty($unitDetails->QCASector) ? htmlentities($unitDetails->QCASector) : 'N/A'; ?></div>
-                                        <div class="key-info-item"><strong>Credit Value:</strong> <?= !empty($unitDetails->Credits) ? htmlentities($unitDetails->Credits) : 'N/A'; ?></div>
-                                        <div class="key-info-item"><strong>Risk Rating:</strong> <?= !empty($unitDetails->Classification2) ? htmlentities($unitDetails->Classification2) : 'N/A'; ?>
-                                        </div>
-                                    </div>
+                            <div class="col-sm-6">
+                                <div class="key-info-items">
+                                    <div class="key-info-item"><strong>Unit Code:</strong> <?= esc_html(get_post_meta($post_id, '_nationalcode', true) ?: 'N/A') ?></div>
+                                    <div class="key-info-item"><strong>Open Awards Unit ID:</strong> <?= esc_html(get_post_meta($post_id, '_id_alpha', true) ?: 'N/A') ?></div>
+                                        <?php
+                                        $level = get_post_meta($post_id, '_level', true);
+                                        if (!empty($level)) {
+                                            if (strpos($level, 'E') === 0) $level = 'Entry Level ' . substr($level, 1);
+                                            elseif (strpos($level, 'L') === 0) $level = 'Level ' . substr($level, 1);
+                                        }
+                                        ?>
+                                    <div class="key-info-item"><strong>Level:</strong> <?= $level ? esc_html($level) : 'N/A' ?></div>
+                                    <div class="key-info-item"><strong>Sector:</strong> <?= esc_html(get_post_meta($post_id, '_qcasector', true) ?: 'N/A') ?></div>
+                                    <div class="key-info-item"><strong>Credit Value:</strong> <?= esc_html(get_post_meta($post_id, '_credits', true) ?: 'N/A') ?></div>
+                                    <div class="key-info-item"><strong>Risk Rating:</strong> <?= esc_html(get_post_meta($post_id, '_classification2', true) ?: 'N/A') ?></div>
                                 </div>
-                               <div class="col-sm-6">
-                                    <div class="key-info-items">
-                                        <div class="key-info-item"><strong>Unit Type:</strong>  <?= !empty($unitDetails->Classification3) ? htmlentities($unitDetails->Classification3) : 'N/A'; ?></div>
-                                        <div class="key-info-item"><strong>Start Date:</strong> <?= !empty($unitDetails->RecognitionDate) ? date('d F Y', strtotime($unitDetails->RecognitionDate)) : 'N/A';?></div>
-                                        <div class="key-info-item"><strong>Review Date:</strong> <?= !empty($unitDetails->ReviewDate) ? date('d F Y', strtotime($unitDetails->ReviewDate)) : 'N/A';?></div>
-                                        <div class="key-info-item"><strong>End Date:</strong> <?= !empty($unitDetails->ExpiryDate) ? date('d F Y', strtotime($unitDetails->ExpiryDate)) : 'N/A'; ?></div>
-                                        <div class="key-info-item"><strong>Guided Learning Hours:</strong> <?= !empty($unitDetails->GLH) ? htmlentities($unitDetails->GLH) : 'N/A'; ?></div>
-                                    </div>
+                            </div>
+                            <div class="col-sm-6">
+                                <div class="key-info-items">
+                                    <div class="key-info-item"><strong>Unit Type:</strong> <?= esc_html(get_post_meta($post_id, '_classification3', true) ?: 'N/A') ?></div>
+                                    <div class="key-info-item"><strong>Start Date:</strong> <?= get_post_meta($post_id, '_recognitiondate', true) ? date('d F Y', strtotime(get_post_meta($post_id, '_recognitiondate', true))) : 'N/A' ?></div>
+                                    <div class="key-info-item"><strong>Review Date:</strong> <?= get_post_meta($post_id, '_reviewdate', true) ? date('d F Y', strtotime(get_post_meta($post_id, '_reviewdate', true))) : 'N/A' ?></div>
+                                    <div class="key-info-item"><strong>End Date:</strong> <?= get_post_meta($post_id, '_expirydate', true) ? date('d F Y', strtotime(get_post_meta($post_id, '_expirydate', true))) : 'N/A' ?></div>
+                                    <div class="key-info-item"><strong>Guided Learning Hours:</strong> <?= esc_html(get_post_meta($post_id, '_glh', true) ?: 'N/A') ?></div>
                                 </div>
-                            <?php } else { ?>
-                                <div class="col-12">
-                                    <p><strong>Error:</strong> <?= htmlentities($unitDetails->error); ?></p>
-                                </div>
-                            <?php } ?>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -211,53 +84,24 @@ $additional_documents = carbon_get_the_post_meta('additional_documents');
                                 <div class="related-qualifications-container mx-0 mw-100">
                                     <h2 class="h3-style-1">RELATED QUALIFICATIONS</h2>
                                     <?php
-                                    $qualifications = [];
-                                    
-                                    // Translate SimpleXMLElement outputs down to standardized associative arrays
-                                    if (!empty($unitQualification)) {
-                                        foreach ($unitQualification as $qual) {
-                                            $qualifications[] = [
-                                                'title'    => (string)$qual->Title,
-                                                'code'     => (string)$qual->QualificationReferenceNumber,
-                                                'id'       => (string)$qual->ID,
-                                                'level'    => (string)$qual->Level,
-                                                'credits'  => (string)$qual->TotalCreditsRequired,
-                                                'expanded' => false
-                                            ];
-                                        }
-                                    }
-
-                                    if (empty($qualifications)) {
+                                    if (empty($unitQualification)) {
                                         echo '<div>No related qualifications are currently available for this unit.</div>';
                                     } else {
-                                        foreach ($qualifications as $index => $qualification) {
+                                        foreach ($unitQualification as $index => $qualification) {
                                             $expandButton = '+';
 
-                                            // Access WP DB utilizing our scoped Quba_Render method abstraction
-                                            $post_id = Quba_Render::get_post_id_by_meta_field('_id', $qualification['id']);
-
-                                            if (!$post_id) {
-                                                $post_id = Quba_Render::get_post_id_by_meta_field('_qualificationreferencenumber', $qualification['code']);
+                                            $mapped_post_id = Quba_Render::get_post_id_by_meta_field('_id', $qualification['id']);
+                                            if (!$mapped_post_id) {
+                                                $mapped_post_id = Quba_Render::get_post_id_by_meta_field('_qualificationreferencenumber', $qualification['code']);
                                             }
-
-                                            if (!$post_id) {
+                                            if (!$mapped_post_id) {
                                                 $title_slug = sanitize_title($qualification['title']);
                                                 $code_part = preg_replace('/[^a-zA-Z0-9]+/', '', $qualification['code']);
-                                                $slug = $title_slug . '-' . $code_part;
-                                                $post = get_page_by_path($slug, OBJECT, 'qualifications');
-                                                if ($post) {
-                                                    $post_id = $post->ID;
-                                                }
+                                                $post = get_page_by_path($title_slug . '-' . $code_part, OBJECT, 'qualifications');
+                                                if ($post) $mapped_post_id = $post->ID;
                                             }
                                             
-                                            if ($post_id) {
-                                                $qualification_link = get_permalink($post_id);
-                                            } else {
-                                                $title_slug = sanitize_title($qualification['title']);
-                                                $code_part = preg_replace('/[^a-zA-Z0-9]+/', '', $qualification['code']);
-                                                $fallback_slug = $title_slug . '-' . $code_part;
-                                                $qualification_link = home_url('/qualifications/' . $fallback_slug);
-                                            }
+                                            $qualification_link = $mapped_post_id ? get_permalink($mapped_post_id) : home_url('/qualifications/' . sanitize_title($qualification['title']) . '-' . preg_replace('/[^a-zA-Z0-9]+/', '', $qualification['code']));
                                     ?>
                                     <div class="qualification-box" data-index="<?php echo $index; ?>">
                                         <div class="qualification-header">
@@ -276,11 +120,8 @@ $additional_documents = carbon_get_the_post_meta('additional_documents');
                                             <?php
                                             $level = $qualification['level'];
                                             if (!empty($level)) {
-                                                if (strpos($level, 'E') === 0) {
-                                                    $level = 'Entry Level ' . str_replace('E', '', $level);
-                                                } elseif (strpos($level, 'L') === 0) {
-                                                    $level = 'Level ' . str_replace('L', '', $level);
-                                                }
+                                                if (strpos($level, 'E') === 0) $level = 'Entry Level ' . str_replace('E', '', $level);
+                                                elseif (strpos($level, 'L') === 0) $level = 'Level ' . str_replace('L', '', $level);
                                             }
                                             ?>
                                             <div class="detail-row">
