@@ -64,7 +64,7 @@
     padding: 12px 20px;
 }
 
-.qualification-filter-wrapper {
+.qualification-filter-wrapper.qualification-filter-wrapper {
     border: 1px solid #e7e7e7;
 }
 .button-disabled {
