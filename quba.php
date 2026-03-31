@@ -442,14 +442,24 @@ class Quba_Cron_Sync
      */
     public static function process_batch($batch_size = 5)
     {
+        $start_time = microtime(true); // Start the timer
+
         $queue = get_option('quba_sync_queue', []);
-        if (empty($queue)) return 0;
+        $total_in_queue = count($queue);
+
+        if (empty($queue)) {
+            return 0;
+        }
 
         $client = Quba_API::get_client();
         if (!$client) {
-            self::log_action("ERROR: Processing Batch failed. Could not instantiate SOAP Client.");
-            return count($queue);
+            self::log_action("ERROR: Batch Processing failed. Could not instantiate SOAP Client.");
+            return $total_in_queue;
         }
+
+        // Calculate actual batch size (in case there are fewer items left than the limit)
+        $actual_batch_size = min($batch_size, $total_in_queue);
+        self::log_action("INFO: Processing new batch of {$actual_batch_size} items. ({$total_in_queue} items remaining in queue).");
 
         $batch = array_splice($queue, 0, $batch_size);
 
@@ -462,6 +472,18 @@ class Quba_Cron_Sync
         }
 
         update_option('quba_sync_queue', $queue, false);
+
+        // Stop the timer and calculate the duration
+        $end_time = microtime(true);
+        $duration = round($end_time - $start_time, 2);
+
+        // Format into Minutes and Seconds for cleaner reading
+        $mins = floor($duration / 60);
+        $secs = $duration % 60;
+        $time_string = $mins > 0 ? "{$mins}m {$secs}s" : "{$duration}s";
+
+        self::log_action("SUCCESS: Batch of {$actual_batch_size} items completed in {$time_string}.");
+
         return count($queue);
     }
 
@@ -470,7 +492,8 @@ class Quba_Cron_Sync
      */
     public static function process_batch_cron()
     {
-        self::process_batch(50);
+        self::log_action("INFO: Auto-Cron execution triggered.");
+        self::process_batch(100); // Increased from 50 to 100
     }
 
     /**
