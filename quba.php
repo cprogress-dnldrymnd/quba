@@ -492,7 +492,6 @@ class Quba_Cron_Sync
      */
     public static function process_batch_cron()
     {
-        self::log_action("INFO: Auto-Cron execution triggered.");
         self::process_batch(100);
     }
 
