@@ -63,17 +63,29 @@ $chev = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="cu
 
                             <div class="col-lg-6 search-field search-qual search-units level">
                                 <?php
-                                $levels = array_filter(get_unique_meta_values('_level'));
+                                // 1. Fetch and filter the raw levels
+                                $raw_levels = array_filter(get_unique_meta_values('_level'));
                                 $level_val = isset($_GET['Level']) ? sanitize_text_field($_GET['Level']) : '';
+
+                                // 2. Prepare an associative array mapping the raw value to the formatted label
+                                $sorted_levels = [];
+                                foreach ($raw_levels as $level) {
+                                    $level_label = $level;
+                                    if (strpos($level, 'E') === 0) {
+                                        $level_label = 'Entry Level ' . substr($level, 1);
+                                    } elseif (strpos($level, 'L') === 0) {
+                                        $level_label = 'Level ' . substr($level, 1);
+                                    }
+                                    $sorted_levels[$level] = $level_label;
+                                }
+
+                                // 3. Sort the array alphabetically by the label (using natural sort so Level 2 is before Level 10)
+                                asort($sorted_levels, SORT_NATURAL | SORT_FLAG_CASE);
                                 ?>
                                 <select class="trigger-ajax-change" name="Level" id="level">
                                     <option value="">Level</option>
-                                    <?php foreach ($levels as $level) {
-                                        $level_label = $level;
-                                        if (strpos($level, 'E') === 0) $level_label = 'Entry Level ' . substr($level, 1);
-                                        elseif (strpos($level, 'L') === 0) $level_label = 'Level ' . substr($level, 1);
-                                    ?>
-                                        <option value="<?= esc_attr($level) ?>" <?= selected($level, $level_val, false) ?>><?= esc_html($level_label) ?></option>
+                                    <?php foreach ($sorted_levels as $val => $label) { ?>
+                                        <option value="<?= esc_attr($val) ?>" <?= selected($val, $level_val, false) ?>><?= esc_html($label) ?></option>
                                     <?php } ?>
                                 </select>
                             </div>
