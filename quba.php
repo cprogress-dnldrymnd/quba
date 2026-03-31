@@ -204,21 +204,22 @@ class Quba_Cron_Sync
     }
 
     /**
-     * Registers a custom 30-minute interval block in seconds (1800s).
+     * Registers a custom 3-minute interval block in seconds (180s).
      * @param array $schedules Existing WordPress cron schedules.
      * @return array Updated WordPress cron schedules.
      */
     public static function add_custom_cron_intervals($schedules)
     {
-        $schedules['two_minutes'] = [
-            'interval' => 120, // 120 seconds = 2 minutes
-            'display'  => 'Every 2 Minutes'
+        $schedules['three_minutes'] = [
+            'interval' => 180,
+            'display'  => 'Every 3 Minutes'
         ];
         return $schedules;
     }
 
     /**
      * Injects the CRON scheduler mappings on plugin activation.
+     * Evaluates current server time to accurately push the daily queue build to 02:00:00.
      */
     public static function activate()
     {
@@ -234,11 +235,10 @@ class Quba_Cron_Sync
         }
 
         if (!wp_next_scheduled('quba_process_sync_queue')) {
-            // Bind to the new 2-minute rapid fire sequence
-            wp_schedule_event(time(), 'two_minutes', 'quba_process_sync_queue');
+            // Bind to the new 3-minute sequence
+            wp_schedule_event(time(), 'three_minutes', 'quba_process_sync_queue');
         }
     }
-
     /**
      * Purges background scheduled events on plugin deactivation.
      */
