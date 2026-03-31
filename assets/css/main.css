@@ -67,7 +67,31 @@
 .qualification-filter-wrapper {
     border: 1px solid #e7e7e7;
 }
-
+.button-disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+.button-disabled span {
+    color: #888;
+}
+.debug-info {
+    margin: 20px;
+    padding: 15px;
+    background: #f8f9fa;
+    border: 1px dashed #676767;
+    border-radius: 5px;
+    font-size: 13px;
+    line-height: 1;
+}
+.debug-info h3 {
+    font-size: 16px;
+}
+.debug-info p {
+    margin-bottom: 5px;
+}
+.debug-info p:last-child {
+    margin-bottom: 0;
+}
 @media (max-width: 768px) {
     .search-results-count {
         flex-direction: column;
@@ -78,4 +102,3 @@
         margin-bottom: 10px;
     }
 }
-

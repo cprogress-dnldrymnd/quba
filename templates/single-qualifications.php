@@ -33,11 +33,6 @@ function key_info($key, $label, $type = 'string') {
 $additional_documents = get_post_meta($post_id, 'additional_documents', true);
 ?>
 
-<style>
-.button-disabled { opacity: 0.6; cursor: not-allowed; }
-.button-disabled span { color: #888; }
-.debug-info { margin: 20px; padding: 15px; background: #f8f9fa; border: 1px solid #ddd; border-radius: 5px; }
-</style>
 
 <div id="primary" class="row-fluid">
     <div id="content" role="main" class="span8 offset2">
