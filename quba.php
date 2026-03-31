@@ -210,6 +210,21 @@ class Quba_Cron_Sync
     }
 
     /**
+     * Purges the physical log file before the daily 2:00 AM sync queue build begins.
+     */
+    public static function clear_daily_logs()
+    {
+        $upload_dir = wp_upload_dir();
+        $log_file = wp_normalize_path($upload_dir['basedir'] . '/quba-logs/sync.log');
+
+        if (file_exists($log_file)) {
+            // Empty the file contents
+            file_put_contents($log_file, '');
+            // Write the first entry for the new day
+            self::log_action("INFO: Scheduled 2:00 AM daily log reset executed.");
+        }
+    }
+    /**
      * Registers a custom 3-minute interval block in seconds (180s).
      * @param array $schedules Existing WordPress cron schedules.
      * @return array Updated WordPress cron schedules.
