@@ -191,12 +191,13 @@ class Quba_Post_Types
  * Class Quba_Cron_Sync
  * Orchestrates batched automated mapping of API data into persistent local WP Post Types.
  */
-class Quba_Cron_Sync 
+class Quba_Cron_Sync
 {
     /**
      * Bootstraps the automated WP-Cron sync sequence mappings.
      */
-    public static function init() {
+    public static function init()
+    {
         add_filter('cron_schedules', [__CLASS__, 'add_custom_cron_intervals']);
         add_action('quba_daily_sync_build_queue', [__CLASS__, 'build_sync_queue']);
         add_action('quba_process_sync_queue', [__CLASS__, 'process_batch_cron']);
@@ -207,7 +208,8 @@ class Quba_Cron_Sync
      * @param array $schedules Existing WordPress cron schedules.
      * @return array Updated WordPress cron schedules.
      */
-    public static function add_custom_cron_intervals($schedules) {
+    public static function add_custom_cron_intervals($schedules)
+    {
         $schedules['thirty_minutes'] = [
             'interval' => 1800,
             'display'  => 'Every 30 Minutes'
@@ -218,11 +220,21 @@ class Quba_Cron_Sync
     /**
      * Injects the CRON scheduler mappings on plugin activation.
      */
-    public static function activate() {
-        if (!wp_next_scheduled('quba_daily_sync_build_queue')) {
-            wp_schedule_event(time(), 'daily', 'quba_daily_sync_build_queue');
+    public static function activate()
+    {
+        // Calculate timestamp for the next 2:00 AM (Server Time)
+        $next_2am = strtotime('02:00:00');
+        if ($next_2am <= time()) {
+            // If 2 AM has already passed today, schedule for 2 AM tomorrow
+            $next_2am = strtotime('tomorrow 02:00:00');
         }
+
+        if (!wp_next_scheduled('quba_daily_sync_build_queue')) {
+            wp_schedule_event($next_2am, 'daily', 'quba_daily_sync_build_queue');
+        }
+
         if (!wp_next_scheduled('quba_process_sync_queue')) {
+            // The batch processor can start immediately so manual queues process instantly
             wp_schedule_event(time(), 'thirty_minutes', 'quba_process_sync_queue');
         }
     }
@@ -230,7 +242,8 @@ class Quba_Cron_Sync
     /**
      * Purges background scheduled events on plugin deactivation.
      */
-    public static function deactivate() {
+    public static function deactivate()
+    {
         wp_clear_scheduled_hook('quba_daily_sync_build_queue');
         wp_clear_scheduled_hook('quba_process_sync_queue');
     }
@@ -239,27 +252,28 @@ class Quba_Cron_Sync
      * Writes operational execution data natively resolving to file disk mapping variables defining properties safely.
      * @param string $message Operational status or execution result format sequence.
      */
-    public static function log_action($message) {
+    public static function log_action($message)
+    {
         $upload_dir = wp_upload_dir();
         $log_dir = $upload_dir['basedir'] . '/quba-logs';
-        
+
         if (!file_exists($log_dir)) {
             wp_mkdir_p($log_dir);
             // Secure directory
             file_put_contents($log_dir . '/.htaccess', 'Deny from all');
         }
-        
+
         $log_file = $log_dir . '/sync.log';
         $timestamp = current_time('mysql');
         $formatted_message = "[{$timestamp}] {$message}" . PHP_EOL;
-        
+
         // Prevent log file from exceeding 2MB
         if (file_exists($log_file) && filesize($log_file) > 2097152) {
             $existing = file($log_file);
             $existing = array_slice($existing, -1000); // Keep last 1000 lines
             file_put_contents($log_file, implode("", $existing));
         }
-        
+
         file_put_contents($log_file, $formatted_message, FILE_APPEND);
     }
 
@@ -269,7 +283,8 @@ class Quba_Cron_Sync
      * @param array $specific_ids Array of numerical target IDs for precise localized fetching.
      * @return int|bool Valid count integer of queue size or false on failure.
      */
-    public static function build_sync_queue($sync_type = 'both', $specific_ids = []) {
+    public static function build_sync_queue($sync_type = 'both', $specific_ids = [])
+    {
         $client = Quba_API::get_client();
         if (!$client) {
             self::log_action("ERROR: Failed to establish SOAP Client connection.");
@@ -277,9 +292,9 @@ class Quba_Cron_Sync
         }
 
         $queue = [];
-        $processed_quals = []; 
-        $processed_units = []; 
-        
+        $processed_quals = [];
+        $processed_units = [];
+
         self::log_action("INFO: Rebuilding Sync Queue (Type: {$sync_type}, Specific IDs: " . implode(',', $specific_ids) . ")");
 
         if (!is_array($specific_ids)) {
@@ -303,7 +318,7 @@ class Quba_Cron_Sync
                 }
                 $wildcards = ['%', 'a', 'e', 'i', 'o', 'u'];
                 foreach ($wildcards as $char) {
-                    $search_queries[] = ['qcaSector' => '', 'qualificationTitle' => $char, 'qualificationID' => 0]; 
+                    $search_queries[] = ['qcaSector' => '', 'qualificationTitle' => $char, 'qualificationID' => 0];
                 }
             }
 
@@ -322,7 +337,7 @@ class Quba_Cron_Sync
                     ];
                     $res = $client->QUBA_QualificationSearch($req);
                     $xmlString = $res->QUBA_QualificationSearchResult->any ?? '';
-                    
+
                     if ($xmlString) {
                         libxml_use_internal_errors(true);
                         $xml = new SimpleXMLElement(Quba_API::wrap_soap_envelope('QUBA_QualificationSearch', $xmlString));
@@ -341,7 +356,7 @@ class Quba_Cron_Sync
                                 if (isset($qual->Classifications->Classification2)) {
                                     $data['Classification2'] = trim((string) $qual->Classifications->Classification2);
                                 }
-                                
+
                                 $id = $data['ID'] ?? '';
                                 if ($id && !isset($processed_quals[$id])) {
                                     $processed_quals[$id] = true;
@@ -350,9 +365,9 @@ class Quba_Cron_Sync
                             }
                         }
                     }
-                } catch (Exception $e) { 
+                } catch (Exception $e) {
                     self::log_action("ERROR: Qualification Queue Failure - " . $e->getMessage());
-                    continue; 
+                    continue;
                 }
             }
         }
@@ -363,7 +378,7 @@ class Quba_Cron_Sync
 
             if (!empty($specific_ids)) {
                 foreach ($specific_ids as $id) {
-                    $unit_queries[] = ['unitID' => $id, 'unitTitle' => '']; 
+                    $unit_queries[] = ['unitID' => $id, 'unitTitle' => ''];
                 }
             } else {
                 $unit_queries[] = ['unitID' => 0, 'unitTitle' => '%'];
@@ -389,7 +404,7 @@ class Quba_Cron_Sync
                     ];
                     $res = $client->QUBA_UnitSearch($req);
                     $xmlString = $res->QUBA_UnitSearchResult->any ?? '';
-                    
+
                     if ($xmlString) {
                         libxml_use_internal_errors(true);
                         $xml = new SimpleXMLElement(Quba_API::wrap_soap_envelope('QUBA_UnitSearch', $xmlString));
@@ -400,7 +415,7 @@ class Quba_Cron_Sync
                                 foreach ($unit->children() as $child) {
                                     $data[$child->getName()] = trim((string) $child);
                                 }
-                                
+
                                 $id = $data['ID'] ?? '';
                                 if ($id && !isset($processed_units[$id])) {
                                     $processed_units[$id] = true;
@@ -409,7 +424,7 @@ class Quba_Cron_Sync
                             }
                         }
                     }
-                } catch (Exception $e) { 
+                } catch (Exception $e) {
                     self::log_action("ERROR: Unit Queue Failure - " . $e->getMessage());
                 }
             }
@@ -425,7 +440,8 @@ class Quba_Cron_Sync
      * @param int $batch_size Maximum execution ceiling for array chunk processing.
      * @return int Size remaining sequentially in the processing queue.
      */
-    public static function process_batch($batch_size = 5) {
+    public static function process_batch($batch_size = 5)
+    {
         $queue = get_option('quba_sync_queue', []);
         if (empty($queue)) return 0;
 
@@ -436,7 +452,7 @@ class Quba_Cron_Sync
         }
 
         $batch = array_splice($queue, 0, $batch_size);
-        
+
         foreach ($batch as $item) {
             if ($item['type'] === 'qualifications') {
                 self::process_single_qualification($client, $item['data']);
@@ -452,8 +468,9 @@ class Quba_Cron_Sync
     /**
      * WP-Cron delegator method to invoke standard batch iterations background-only.
      */
-    public static function process_batch_cron() {
-        self::process_batch(50); 
+    public static function process_batch_cron()
+    {
+        self::process_batch(50);
     }
 
     /**
@@ -463,11 +480,12 @@ class Quba_Cron_Sync
      * @param string $filename Final generated local file identification.
      * @return string|bool URL endpoint or false indicating critical failure.
      */
-    private static function save_pdf_stream($base_content, $path_suffix, $filename) {
+    private static function save_pdf_stream($base_content, $path_suffix, $filename)
+    {
         if (empty($base_content) || !is_string($base_content)) return false;
-        
+
         $pdf_binary = '';
-        
+
         if (strpos($base_content, '%PDF') === 0) {
             $pdf_binary = $base_content;
         } else {
@@ -475,22 +493,22 @@ class Quba_Cron_Sync
             if ($decoded !== false && strpos($decoded, '%PDF') === 0) {
                 $pdf_binary = $decoded;
             } else {
-                $pos = strpos($base_content, 'JVBERi0x'); 
+                $pos = strpos($base_content, 'JVBERi0x');
                 if ($pos !== false) {
                     $pdf_binary = base64_decode(substr($base_content, $pos));
                 }
             }
         }
-        
+
         if ($pdf_binary) {
             return self::store_document($pdf_binary, $path_suffix, $filename);
         }
-        
+
         $aggressive_decode = base64_decode($base_content);
         if ($aggressive_decode && strpos($aggressive_decode, '%PDF') === 0) {
-             return self::store_document($aggressive_decode, $path_suffix, $filename);
+            return self::store_document($aggressive_decode, $path_suffix, $filename);
         }
-        
+
         return false;
     }
 
@@ -499,24 +517,27 @@ class Quba_Cron_Sync
      * @param SoapClient $client Passed Active Resource.
      * @param array $data Sanitized attribute matrix dictating insertion variables.
      */
-    private static function process_single_qualification($client, $data) {
+    private static function process_single_qualification($client, $data)
+    {
         if (!isset($data['ID'])) return;
         $post_id = self::save_post_data($data, 'qualifications');
         $req_doc = ['qualificationID' => (int)$data['ID']];
-        
+
         try {
             $res_doc = $client->QUBA_GetQualificationDocuments($req_doc);
             $any_data = $res_doc->QUBA_GetQualificationDocumentsResult->any ?? '';
             $url = self::save_pdf_stream($any_data, 'qualifications/purpose-statement', 'PurposeStatement_' . $data['ID']);
             if ($url) update_post_meta($post_id, '_purpose_statement_url', $url);
-        } catch (Exception $e) {}
+        } catch (Exception $e) {
+        }
 
         try {
             $res_guide = $client->QUBA_GetQualificationGuide($req_doc);
             $pdf_data = $res_guide->QUBA_GetQualificationGuideResult ?? '';
             $url = self::save_pdf_stream($pdf_data, 'qualifications/qualification-guide', 'QualificationGuide_' . $data['ID']);
             if ($url) update_post_meta($post_id, '_qualification_guide_url', $url);
-        } catch (Exception $e) {}
+        } catch (Exception $e) {
+        }
     }
 
     /**
@@ -524,12 +545,13 @@ class Quba_Cron_Sync
      * @param SoapClient $client Passed Active Resource.
      * @param array $data Sanitized attribute matrix dictating insertion variables.
      */
-    private static function process_single_unit($client, $data) {
+    private static function process_single_unit($client, $data)
+    {
         if (!isset($data['ID'])) return;
-        
+
         $post_id = self::save_post_data($data, 'units');
-        $numeric_id = (int)$data['ID']; 
-        
+        $numeric_id = (int)$data['ID'];
+
         $pdfContent = '';
 
         try {
@@ -537,7 +559,8 @@ class Quba_Cron_Sync
             if (isset($pdf_res->QUBA_GetUnitContentResult) && !empty($pdf_res->QUBA_GetUnitContentResult)) {
                 $pdfContent = $pdf_res->QUBA_GetUnitContentResult;
             }
-        } catch (Exception $e) {}
+        } catch (Exception $e) {
+        }
 
         if ($pdfContent) {
             $url = self::store_document($pdfContent, 'units/unit-content', 'UnitContent_' . $numeric_id);
@@ -546,39 +569,40 @@ class Quba_Cron_Sync
 
         try {
             $qual_req = [
-                'qualificationID'     => 0, 
-                'qualificationTitle'  => '', 
-                'qualificationLevel'  => '', 
-                'qualificationNumber' => '', 
-                'qcaSector'           => '', 
-                'provisionType'       => '', 
-                'unitID'              => $numeric_id, 
-                'includeHub'          => false, 
+                'qualificationID'     => 0,
+                'qualificationTitle'  => '',
+                'qualificationLevel'  => '',
+                'qualificationNumber' => '',
+                'qcaSector'           => '',
+                'provisionType'       => '',
+                'unitID'              => $numeric_id,
+                'includeHub'          => false,
                 'centreID'            => ''
             ];
             $qual_res = $client->QUBA_QualificationSearch($qual_req);
             $q_xmlString = $qual_res->QUBA_QualificationSearchResult->any ?? '';
-            
+
             if ($q_xmlString) {
                 libxml_use_internal_errors(true);
                 $q_xml = new SimpleXMLElement(Quba_API::wrap_soap_envelope('QUBA_QualificationSearch', $q_xmlString));
                 $related = $q_xml->xpath('//QubaQualification');
-                
+
                 $related_array = [];
                 if ($related) {
                     foreach ($related as $r_qual) {
                         $related_array[] = [
-                            'title'   => (string)$r_qual->Title, 
-                            'code'    => (string)$r_qual->QualificationReferenceNumber, 
-                            'id'      => (string)$r_qual->ID, 
-                            'level'   => (string)$r_qual->Level, 
+                            'title'   => (string)$r_qual->Title,
+                            'code'    => (string)$r_qual->QualificationReferenceNumber,
+                            'id'      => (string)$r_qual->ID,
+                            'level'   => (string)$r_qual->Level,
                             'credits' => (string)$r_qual->TotalCreditsRequired
                         ];
                     }
                 }
                 update_post_meta($post_id, '_related_qualifications', $related_array);
             }
-        } catch (Exception $e) {}
+        } catch (Exception $e) {
+        }
     }
 
     /**
@@ -587,13 +611,14 @@ class Quba_Cron_Sync
      * @param string $post_type The explicit CPT database key parameter mapped to logic execution.
      * @return int Mapped generated post ID derived natively within WP environment blocks.
      */
-    private static function save_post_data($data, $post_type) {
+    private static function save_post_data($data, $post_type)
+    {
         $check_id = 0;
-        
+
         if ($post_type === 'units') {
             $num_id = $data['ID'] ?? '';
             $alpha_id = $data['ID_Alpha'] ?? '';
-            
+
             if ($num_id) {
                 $check_id = Quba_Render::get_post_id_by_meta_field('_id', $num_id);
             }
@@ -606,7 +631,7 @@ class Quba_Cron_Sync
         } else {
             $check_id = Quba_Render::get_post_id_by_meta_field('_id', $data['ID'] ?? '');
         }
-        
+
         $post_content = isset($data['QualificationSummary']) ? Quba_Render::santize_html($data['QualificationSummary']) : '';
         if (empty($post_content) && isset($data['Summary'])) $post_content = Quba_Render::santize_html($data['Summary']);
 
@@ -614,7 +639,7 @@ class Quba_Cron_Sync
         foreach ($data as $key => $val) {
             $meta_input['_' . strtolower($key)] = $val;
         }
-        
+
         if ($post_type === 'units') {
             if (isset($data['ID'])) $meta_input['_id'] = $data['ID'];
             if (isset($data['ID_Alpha'])) $meta_input['_id_alpha'] = $data['ID_Alpha'];
@@ -646,7 +671,8 @@ class Quba_Cron_Sync
      * @param string $filename Native execution file title target variable mapping logic blocks.
      * @return string|bool Correct localized mapping block for final document array extraction sequence.
      */
-    private static function store_document($file_data, $path_suffix, $filename) {
+    private static function store_document($file_data, $path_suffix, $filename)
+    {
         $upload_dir = wp_upload_dir();
         $target_dir = $upload_dir['basedir'] . '/documents/' . $path_suffix;
         $target_url = $upload_dir['baseurl'] . '/documents/' . $path_suffix;
@@ -663,15 +689,16 @@ class Quba_Cron_Sync
  * Class Quba_Admin
  * Manages the backend UI for manual synchronization.
  */
-class Quba_Admin 
+class Quba_Admin
 {
     /**
      * Enqueues actions mapped to administrative backend execution schemas contextually limiting footprint properties.
      */
-    public static function init() {
+    public static function init()
+    {
         add_action('admin_menu', [__CLASS__, 'register_menu']);
         add_action('admin_enqueue_scripts', [__CLASS__, 'enqueue_admin_scripts']);
-        
+
         add_action('wp_ajax_quba_init_sync', [__CLASS__, 'ajax_init_sync']);
         add_action('wp_ajax_quba_process_batch', [__CLASS__, 'ajax_process_batch']);
         add_action('wp_ajax_quba_clear_logs', [__CLASS__, 'ajax_clear_logs']);
@@ -680,7 +707,8 @@ class Quba_Admin
     /**
      * Constructs localized layout logic mapping within default options menu parameter scope blocks dynamically generating layout matrices.
      */
-    public static function register_menu() {
+    public static function register_menu()
+    {
         add_submenu_page(
             'tools.php',
             'QUBA Data Sync',
@@ -695,9 +723,10 @@ class Quba_Admin
      * Assures JS constraints dynamically isolated to strictly admin menu targets isolating frontend footprint logic dynamically.
      * @param string $hook Reference to executing view parameter dynamically filtering context arrays logic states.
      */
-    public static function enqueue_admin_scripts($hook) {
+    public static function enqueue_admin_scripts($hook)
+    {
         if ($hook !== 'tools_page_quba-sync') return;
-        
+
         wp_enqueue_script('quba-admin-sync', plugin_dir_url(__FILE__) . 'assets/js/admin-sync.js', ['jquery'], '2.8.0', true);
         wp_localize_script('quba-admin-sync', 'qubaAdminAjax', [
             'nonce' => wp_create_nonce('quba_admin_nonce')
@@ -707,33 +736,34 @@ class Quba_Admin
     /**
      * Manages HTML view layout structures injecting variables parameters rendering visual interactive interface constructs.
      */
-    public static function render_admin_page() {
+    public static function render_admin_page()
+    {
         $upload_dir = wp_upload_dir();
         $log_file = $upload_dir['basedir'] . '/quba-logs/sync.log';
         $log_content = file_exists($log_file) ? esc_html(file_get_contents($log_file)) : 'No logs generated yet. Run a sync to begin monitoring.';
-        
-        ?>
+
+?>
         <div class="wrap">
             <h1>QUBA Manual Synchronization</h1>
             <p>Use this tool to manually trigger a full synchronization of Qualifications and Units from the QUBA SOAP API.</p>
-            
+
             <div style="background: #fff; padding: 20px; border: 1px solid #ccd0d4; max-width: 600px; margin-top: 20px; display: inline-block; vertical-align: top;">
-                
+
                 <div style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-left: 4px solid #2271b1;">
                     <label style="display: block; font-size: 14px; margin-bottom: 10px;"><strong>1. Select Data Entity to Synchronize:</strong></label>
                     <label style="display: block; margin-bottom: 8px;"><input type="radio" name="quba_sync_type" value="both" checked> Both (Qualifications & Units)</label>
                     <label style="display: block; margin-bottom: 8px;"><input type="radio" name="quba_sync_type" value="qualifications"> Qualifications Only</label>
                     <label style="display: block; margin-bottom: 15px;"><input type="radio" name="quba_sync_type" value="units"> Units Only</label>
-                    
+
                     <hr style="border-top: 1px solid #ddd; margin-bottom: 15px;">
-                    
+
                     <label style="display: block; font-size: 14px; margin-bottom: 10px;"><strong>2. Optional: Sync Specific Target ID(s)</strong></label>
                     <input type="text" id="quba_sync_specific_id" placeholder="e.g. 1234, 5678, 9101" style="width: 100%; max-width: 300px;">
                     <p class="description" style="font-size: 12px; color: #666; margin-top: 5px;">Leave blank to run a full synchronization. If you enter comma-separated IDs here, the tool will instantly bypass the extraction loops and sync exclusively those items.</p>
                 </div>
 
                 <button id="quba-start-sync" class="button button-primary button-large">Start Manual Sync</button>
-                
+
                 <div style="margin-top: 20px;">
                     <strong>Status:</strong> <span id="quba-sync-status">Idle. Ready to sync.</span>
                 </div>
@@ -757,7 +787,7 @@ class Quba_Admin
 
                     function clearQubaLogs(e) {
                         e.preventDefault();
-                        if(confirm('Are you sure you want to delete the sync log history?')) {
+                        if (confirm('Are you sure you want to delete the sync log history?')) {
                             jQuery.post(ajaxurl, {
                                 action: 'quba_clear_logs',
                                 nonce: qubaAdminAjax.nonce
@@ -769,16 +799,17 @@ class Quba_Admin
                 </script>
             </div>
         </div>
-        <?php
+    <?php
     }
 
     /**
      * Clears physical log file upon admin request natively handling AJAX permissions structurally.
      */
-    public static function ajax_clear_logs() {
+    public static function ajax_clear_logs()
+    {
         check_ajax_referer('quba_admin_nonce', 'nonce');
         if (!current_user_can('manage_options')) wp_send_json_error('Unauthorized');
-        
+
         $upload_dir = wp_upload_dir();
         $log_file = $upload_dir['basedir'] . '/quba-logs/sync.log';
         if (file_exists($log_file)) {
@@ -790,12 +821,13 @@ class Quba_Admin
     /**
      * Formats API execution strings delegating execution target context dependencies mapping queue schemas dynamically.
      */
-    public static function ajax_init_sync() {
+    public static function ajax_init_sync()
+    {
         check_ajax_referer('quba_admin_nonce', 'nonce');
         if (!current_user_can('manage_options')) wp_send_json_error('Unauthorized');
 
         $sync_type = isset($_POST['sync_type']) ? sanitize_text_field($_POST['sync_type']) : 'both';
-        
+
         $specific_ids = [];
         if (!empty($_POST['specific_id'])) {
             $raw_ids = explode(',', sanitize_text_field($_POST['specific_id']));
@@ -806,9 +838,9 @@ class Quba_Admin
                 }
             }
         }
-        
+
         $total = Quba_Cron_Sync::build_sync_queue($sync_type, $specific_ids);
-        
+
         if ($total === false) wp_send_json_error('Failed to connect to QUBA API.');
         wp_send_json_success(['total' => $total]);
     }
@@ -816,7 +848,8 @@ class Quba_Admin
     /**
      * Executes process batches iteratively rendering output properties mapping values sequentially triggering internal cron execution.
      */
-    public static function ajax_process_batch() {
+    public static function ajax_process_batch()
+    {
         check_ajax_referer('quba_admin_nonce', 'nonce');
         if (!current_user_can('manage_options')) wp_send_json_error('Unauthorized');
 
@@ -829,12 +862,13 @@ class Quba_Admin
  * Class Quba_Admin_Meta
  * Manages the generation of native WordPress Meta Boxes completely removing Carbon Fields dependencies.
  */
-class Quba_Admin_Meta 
+class Quba_Admin_Meta
 {
     /**
      * Hooks into the initial WordPress execution queue mapping properties rendering dynamic variables logic schemas properties.
      */
-    public static function init() {
+    public static function init()
+    {
         add_action('add_meta_boxes', [__CLASS__, 'register_meta_boxes']);
         add_action('save_post', [__CLASS__, 'save_meta_boxes']);
         add_action('admin_enqueue_scripts', [__CLASS__, 'enqueue_scripts']);
@@ -845,7 +879,8 @@ class Quba_Admin_Meta
      * Validates localized hook string mappings enforcing native media execution contexts isolated directly parameter sequences array schema execution.
      * @param string $hook Identifies target logic page validation schemas isolating dependency bloat executing conditions.
      */
-    public static function enqueue_scripts($hook) {
+    public static function enqueue_scripts($hook)
+    {
         global $post_type;
         if (in_array($hook, ['post.php', 'post-new.php']) && in_array($post_type, ['qualifications', 'units'])) {
             wp_enqueue_media();
@@ -856,7 +891,8 @@ class Quba_Admin_Meta
     /**
      * Defines interactive meta block configurations triggering structural array injection rendering logic instances natively within post formats block layouts.
      */
-    public static function register_meta_boxes() {
+    public static function register_meta_boxes()
+    {
         add_meta_box('quba_meta_data', 'QUBA Data & Documents', [__CLASS__, 'render_meta_box'], ['qualifications', 'units'], 'normal', 'high');
     }
 
@@ -864,7 +900,8 @@ class Quba_Admin_Meta
      * Extracts values locally building structural layout parameters defining context array definitions executing variable schemas blocks mappings properties.
      * @param WP_Post $post Internal variable context targeting execution object block definition schemas defining.
      */
-    public static function render_meta_box($post) {
+    public static function render_meta_box($post)
+    {
         wp_nonce_field('quba_meta_nonce_action', 'quba_meta_nonce');
 
         $api_fields = $post->post_type === 'qualifications' ? [
@@ -904,7 +941,7 @@ class Quba_Admin_Meta
         $additional_documents = get_post_meta($post->ID, 'additional_documents', true);
         if (!is_array($additional_documents)) $additional_documents = [];
 
-        ?>
+    ?>
         <div class="quba-tabs">
             <ul class="quba-tab-nav">
                 <li class="active"><a href="#quba-tab-api">API Sync Data (Read-Only)</a></li>
@@ -914,69 +951,70 @@ class Quba_Admin_Meta
             <div id="quba-tab-api" class="quba-tab-content active">
                 <p><em>These fields are synchronized automatically via the QUBA API Cron. Manual edits are disabled.</em></p>
                 <div class="quba-readonly-grid">
-                    <?php foreach ($api_fields as $meta_key => $label): 
+                    <?php foreach ($api_fields as $meta_key => $label):
                         $value = get_post_meta($post->ID, $meta_key, true);
                         if (is_array($value)) $value = json_encode($value);
                     ?>
-                    <div class="quba-field-group">
-                        <label><strong><?= esc_html($label) ?></strong></label>
-                        <input type="text" value="<?= esc_attr($value) ?>" readonly style="width: 100%; background: #f0f0f1; border-color: #ccd0d4;">
-                    </div>
+                        <div class="quba-field-group">
+                            <label><strong><?= esc_html($label) ?></strong></label>
+                            <input type="text" value="<?= esc_attr($value) ?>" readonly style="width: 100%; background: #f0f0f1; border-color: #ccd0d4;">
+                        </div>
                     <?php endforeach; ?>
                 </div>
             </div>
 
             <div id="quba-tab-docs" class="quba-tab-content">
                 <div id="quba-repeater-container">
-                    <?php 
+                    <?php
                     $index = 0;
-                    foreach ($additional_documents as $doc): 
+                    foreach ($additional_documents as $doc):
                         $doc_title = $doc['document_title'] ?? '';
                         $doc_file = $doc['document_file'] ?? '';
                         $filename = $doc_file ? basename(get_attached_file($doc_file)) : 'No file selected';
                     ?>
-                    <div class="quba-repeater-row">
-                        <div class="quba-row-header">
-                            <span class="quba-row-title">Document: <span class="doc-live-title"><?= esc_html($doc_title) ?></span></span>
-                            <div class="quba-row-actions">
-                                <button type="button" class="quba-collapse-row" title="Collapse/Expand">▼</button>
-                                <button type="button" class="quba-duplicate-row" title="Duplicate Row">⧉</button>
-                                <button type="button" class="quba-delete-row" title="Delete Row">✖</button>
-                                <span class="quba-drag-handle" title="Drag to Reorder">☰</span>
+                        <div class="quba-repeater-row">
+                            <div class="quba-row-header">
+                                <span class="quba-row-title">Document: <span class="doc-live-title"><?= esc_html($doc_title) ?></span></span>
+                                <div class="quba-row-actions">
+                                    <button type="button" class="quba-collapse-row" title="Collapse/Expand">▼</button>
+                                    <button type="button" class="quba-duplicate-row" title="Duplicate Row">⧉</button>
+                                    <button type="button" class="quba-delete-row" title="Delete Row">✖</button>
+                                    <span class="quba-drag-handle" title="Drag to Reorder">☰</span>
+                                </div>
                             </div>
-                        </div>
-                        <div class="quba-row-body">
-                            <div class="quba-field-group">
-                                <label>Document Title</label>
-                                <input type="text" class="quba-doc-title-input" name="additional_documents[<?= $index ?>][document_title]" value="<?= esc_attr($doc_title) ?>" style="width: 100%;" />
-                            </div>
-                            <div class="quba-field-group">
-                                <label>Attached File</label>
-                                <div class="quba-file-wrapper">
-                                    <input type="hidden" class="quba-file-id" name="additional_documents[<?= $index ?>][document_file]" value="<?= esc_attr($doc_file) ?>" />
-                                    <span class="quba-file-name" style="margin-right: 15px;"><em><?= esc_html($filename) ?></em></span>
-                                    <button type="button" class="button quba-upload-file">Select File</button>
-                                    <button type="button" class="button quba-remove-file" style="<?= $doc_file ? '' : 'display:none;' ?>">Remove</button>
+                            <div class="quba-row-body">
+                                <div class="quba-field-group">
+                                    <label>Document Title</label>
+                                    <input type="text" class="quba-doc-title-input" name="additional_documents[<?= $index ?>][document_title]" value="<?= esc_attr($doc_title) ?>" style="width: 100%;" />
+                                </div>
+                                <div class="quba-field-group">
+                                    <label>Attached File</label>
+                                    <div class="quba-file-wrapper">
+                                        <input type="hidden" class="quba-file-id" name="additional_documents[<?= $index ?>][document_file]" value="<?= esc_attr($doc_file) ?>" />
+                                        <span class="quba-file-name" style="margin-right: 15px;"><em><?= esc_html($filename) ?></em></span>
+                                        <button type="button" class="button quba-upload-file">Select File</button>
+                                        <button type="button" class="button quba-remove-file" style="<?= $doc_file ? '' : 'display:none;' ?>">Remove</button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                    <?php 
-                    $index++;
-                    endforeach; 
+                    <?php
+                        $index++;
+                    endforeach;
                     ?>
                 </div>
                 <button type="button" id="quba-add-row" class="button button-primary" style="margin-top: 15px;">Add Document</button>
             </div>
         </div>
-        <?php
+    <?php
     }
 
     /**
      * Isolates form save events triggering updates context mapping arrays verifying definitions mapping variables natively.
      * @param int $post_id Native identifier logic parameter extracting execution values definition schemas.
      */
-    public static function save_meta_boxes($post_id) {
+    public static function save_meta_boxes($post_id)
+    {
         if (!isset($_POST['quba_meta_nonce']) || !wp_verify_nonce($_POST['quba_meta_nonce'], 'quba_meta_nonce_action')) return;
         if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) return;
         if (!current_user_can('edit_post', $post_id)) return;
@@ -1000,30 +1038,114 @@ class Quba_Admin_Meta
     /**
      * Embeds internal javascript properties logic context rendering constraints block mapping executions styling dependencies.
      */
-    public static function render_inline_js_css() {
+    public static function render_inline_js_css()
+    {
         global $post_type;
         if (!in_array($post_type, ['qualifications', 'units'])) return;
-        ?>
+    ?>
         <style>
-            .quba-tabs { border: 1px solid #ccd0d4; background: #fff; margin-top: 15px; }
-            .quba-tab-nav { margin: 0; padding: 0; list-style: none; display: flex; border-bottom: 1px solid #ccd0d4; background: #f1f1f1; }
-            .quba-tab-nav li { margin: 0; }
-            .quba-tab-nav a { display: block; padding: 12px 20px; text-decoration: none; color: #3c434a; font-weight: 600; border-right: 1px solid #ccd0d4; }
-            .quba-tab-nav li.active a { background: #fff; color: #2271b1; margin-bottom: -1px; border-bottom: 1px solid #fff; }
-            .quba-tab-content { padding: 20px; display: none; }
-            .quba-tab-content.active { display: block; }
-            
-            .quba-readonly-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
-            .quba-field-group { margin-bottom: 15px; }
-            .quba-field-group label { display: block; margin-bottom: 5px; }
-            
-            .quba-repeater-row { border: 1px solid #dfdfdf; margin-bottom: 15px; background: #fafafa; }
-            .quba-row-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 15px; background: #fff; border-bottom: 1px solid #dfdfdf; cursor: move; }
-            .quba-row-title { font-weight: 600; }
-            .quba-row-actions button, .quba-drag-handle { background: none; border: none; cursor: pointer; margin-left: 10px; font-size: 16px; color: #a7aaad; transition: color 0.2s; }
-            .quba-row-actions button:hover, .quba-drag-handle:hover { color: #2271b1; }
-            .quba-delete-row:hover { color: #d63638 !important; }
-            .quba-row-body { padding: 15px; }
+            .quba-tabs {
+                border: 1px solid #ccd0d4;
+                background: #fff;
+                margin-top: 15px;
+            }
+
+            .quba-tab-nav {
+                margin: 0;
+                padding: 0;
+                list-style: none;
+                display: flex;
+                border-bottom: 1px solid #ccd0d4;
+                background: #f1f1f1;
+            }
+
+            .quba-tab-nav li {
+                margin: 0;
+            }
+
+            .quba-tab-nav a {
+                display: block;
+                padding: 12px 20px;
+                text-decoration: none;
+                color: #3c434a;
+                font-weight: 600;
+                border-right: 1px solid #ccd0d4;
+            }
+
+            .quba-tab-nav li.active a {
+                background: #fff;
+                color: #2271b1;
+                margin-bottom: -1px;
+                border-bottom: 1px solid #fff;
+            }
+
+            .quba-tab-content {
+                padding: 20px;
+                display: none;
+            }
+
+            .quba-tab-content.active {
+                display: block;
+            }
+
+            .quba-readonly-grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 15px;
+            }
+
+            .quba-field-group {
+                margin-bottom: 15px;
+            }
+
+            .quba-field-group label {
+                display: block;
+                margin-bottom: 5px;
+            }
+
+            .quba-repeater-row {
+                border: 1px solid #dfdfdf;
+                margin-bottom: 15px;
+                background: #fafafa;
+            }
+
+            .quba-row-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 10px 15px;
+                background: #fff;
+                border-bottom: 1px solid #dfdfdf;
+                cursor: move;
+            }
+
+            .quba-row-title {
+                font-weight: 600;
+            }
+
+            .quba-row-actions button,
+            .quba-drag-handle {
+                background: none;
+                border: none;
+                cursor: pointer;
+                margin-left: 10px;
+                font-size: 16px;
+                color: #a7aaad;
+                transition: color 0.2s;
+            }
+
+            .quba-row-actions button:hover,
+            .quba-drag-handle:hover {
+                color: #2271b1;
+            }
+
+            .quba-delete-row:hover {
+                color: #d63638 !important;
+            }
+
+            .quba-row-body {
+                padding: 15px;
+            }
         </style>
 
         <script>
@@ -1050,7 +1172,10 @@ class Quba_Admin_Meta
                     });
                 }
 
-                repeaterContainer.sortable({ handle: '.quba-drag-handle', update: reindexRows });
+                repeaterContainer.sortable({
+                    handle: '.quba-drag-handle',
+                    update: reindexRows
+                });
 
                 $('#quba-add-row').on('click', function(e) {
                     e.preventDefault();
@@ -1087,7 +1212,7 @@ class Quba_Admin_Meta
 
                 repeaterContainer.on('click', '.quba-delete-row', function(e) {
                     e.preventDefault();
-                    if(confirm('Are you sure you want to remove this document?')) {
+                    if (confirm('Are you sure you want to remove this document?')) {
                         $(this).closest('.quba-repeater-row').remove();
                         reindexRows();
                     }
@@ -1116,9 +1241,18 @@ class Quba_Admin_Meta
                     var btn = $(this);
                     var wrapper = btn.closest('.quba-file-wrapper');
 
-                    if (frame) { frame.open(); return; }
+                    if (frame) {
+                        frame.open();
+                        return;
+                    }
 
-                    frame = wp.media({ title: 'Select Document', button: { text: 'Use this document' }, multiple: false });
+                    frame = wp.media({
+                        title: 'Select Document',
+                        button: {
+                            text: 'Use this document'
+                        },
+                        multiple: false
+                    });
 
                     frame.on('select', function() {
                         var attachment = frame.state().get('selection').first().toJSON();
@@ -1138,7 +1272,7 @@ class Quba_Admin_Meta
                 });
             });
         </script>
-        <?php
+    <?php
     }
 }
 
@@ -1165,7 +1299,7 @@ class Quba_Render
         } else {
             $level_val = str_replace('L', ' Level ', $level);
         }
-        ?>
+    ?>
         <div class="col-lg-4 post-item">
             <div class="post-box h-100">
                 <div class="image-box image-box-placeholder">
@@ -1194,7 +1328,7 @@ class Quba_Render
                 </div>
             </div>
         </div>
-        <?php
+<?php
         return ob_get_clean();
     }
 
