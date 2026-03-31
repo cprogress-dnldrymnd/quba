@@ -210,9 +210,9 @@ class Quba_Cron_Sync
      */
     public static function add_custom_cron_intervals($schedules)
     {
-        $schedules['thirty_minutes'] = [
-            'interval' => 1800,
-            'display'  => 'Every 30 Minutes'
+        $schedules['two_minutes'] = [
+            'interval' => 120, // 120 seconds = 2 minutes
+            'display'  => 'Every 2 Minutes'
         ];
         return $schedules;
     }
@@ -493,7 +493,7 @@ class Quba_Cron_Sync
     public static function process_batch_cron()
     {
         self::log_action("INFO: Auto-Cron execution triggered.");
-        self::process_batch(100); 
+        self::process_batch(100);
     }
 
     /**
