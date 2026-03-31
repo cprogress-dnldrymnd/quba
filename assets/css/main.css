@@ -64,6 +64,10 @@
     padding: 12px 20px;
 }
 
+.qualification-filter-wrapper {
+    border: 1px solid #e7e7e7;
+}
+
 @media (max-width: 768px) {
     .search-results-count {
         flex-direction: column;
@@ -74,3 +78,4 @@
         margin-bottom: 10px;
     }
 }
+
