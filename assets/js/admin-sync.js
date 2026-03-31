@@ -8,7 +8,7 @@ jQuery(document).ready(function ($) {
     $startButton.on('click', function (e) {
         e.preventDefault();
 
-        // Retrieve the selected synchronization scope and specific ID from the UI
+        // Retrieve the selected synchronization scope and specific ID(s) from the UI
         var syncType = $('input[name="quba_sync_type"]:checked').val();
         var specificId = $('#quba_sync_specific_id').val();
 
@@ -18,7 +18,6 @@ jQuery(document).ready(function ($) {
 
         /**
          * Step 1: Initialize the Queue
-         * Calls the backend to fetch the data matrix based on the selected type and optional ID.
          */
         $.ajax({
             url: ajaxurl,
@@ -27,7 +26,7 @@ jQuery(document).ready(function ($) {
                 action: 'quba_init_sync',
                 nonce: qubaAdminAjax.nonce,
                 sync_type: syncType,
-                specific_id: specificId
+                specific_id: specificId // Now passes a comma-separated string
             },
             success: function (response) {
                 if (response.success) {
@@ -35,7 +34,7 @@ jQuery(document).ready(function ($) {
                     processedItems = 0;
 
                     if (totalItems === 0) {
-                        $statusText.html('<span style="color:#b32d2e;"><strong>Queue built, but 0 items were found. Ensure the API is responsive and the ID exists.</strong></span>');
+                        $statusText.html('<span style="color:#b32d2e;"><strong>Queue built, but 0 items were found. Ensure the API is responsive and the ID(s) exist.</strong></span>');
                         $startButton.prop('disabled', false).text('Run Sync Again');
                         return;
                     }
@@ -56,7 +55,6 @@ jQuery(document).ready(function ($) {
 
     /**
      * Step 2: Process the Queue in Batches
-     * Recursively calls the batch processor until the queue drops to 0.
      */
     function processBatch() {
         $.ajax({

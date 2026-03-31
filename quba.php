@@ -3,7 +3,7 @@
 /**
  * Plugin Name: Quba System Integration
  * Description: Integrates QUBA SOAP API, synchronizes units/qualifications via batched processes, and provides custom native templates & meta boxes.
- * Version: 2.6.0
+ * Version: 2.7.0
  * Author: Digitally Disruptive - Donald Raymundo
  * Author URI: https://digitallydisruptive.co.uk/
  * Text Domain: quba-integration
@@ -21,10 +21,6 @@ class Quba_API
 {
     private static $soap_client = null;
 
-    /**
-     * Instantiates and caches the global SOAP client configuration.
-     * @return SoapClient|false The configured SOAP Client or false on failure.
-     */
     public static function get_client()
     {
         if (! self::$soap_client) {
@@ -57,10 +53,6 @@ class Quba_API
         return self::$soap_client;
     }
 
-    /**
-     * Executes the SOAP request to extract active QCA sectors.
-     * @return SimpleXMLElement|Exception SimpleXML object containing sector arrays.
-     */
     public static function get_qca_sectors()
     {
         try {
@@ -78,12 +70,6 @@ class Quba_API
         }
     }
 
-    /**
-     * Wraps raw inner XML response payloads into valid SOAP Envelopes for standardized parsing.
-     * @param string $action The executing SOAP Action.
-     * @param string $xmlString Raw inner XML payload.
-     * @return string Re-constructed SOAP Envelope.
-     */
     public static function wrap_soap_envelope($action, $xmlString)
     {
         $xmlString = $xmlString ? $xmlString : '';
@@ -106,20 +92,13 @@ class Quba_API
  */
 class Quba_Post_Types
 {
-    /**
-     * Boots the class and hooks post type registration to WP Init.
-     */
     public static function init()
     {
         add_action('init', [__CLASS__, 'register_post_types']);
     }
 
-    /**
-     * Configures properties and provisions schemas for Qualifications and Units post types.
-     */
     public static function register_post_types()
     {
-        // 1. Register Qualifications CPT
         $qual_labels = [
             'name'               => 'Qualifications',
             'singular_name'      => 'Qualification',
@@ -153,7 +132,6 @@ class Quba_Post_Types
         ];
         register_post_type('qualifications', $qual_args);
 
-        // 2. Register Units CPT
         $unit_labels = [
             'name'               => 'Units',
             'singular_name'      => 'Unit',
@@ -195,21 +173,13 @@ class Quba_Post_Types
  */
 class Quba_Cron_Sync
 {
-    /**
-     * Bootstraps the automated WP-Cron sync sequence mappings.
-     */
     public static function init()
     {
-        // Inject custom 30-minute schedule into WP-Cron
         add_filter('cron_schedules', [__CLASS__, 'add_custom_cron_intervals']);
-
         add_action('quba_daily_sync_build_queue', [__CLASS__, 'build_sync_queue']);
         add_action('quba_process_sync_queue', [__CLASS__, 'process_batch_cron']);
     }
 
-    /**
-     * Registers a custom 30-minute interval block in seconds (1800s).
-     */
     public static function add_custom_cron_intervals($schedules)
     {
         $schedules['thirty_minutes'] = [
@@ -219,37 +189,23 @@ class Quba_Cron_Sync
         return $schedules;
     }
 
-
-    /**
-     * Injects the CRON scheduler mappings on plugin activation.
-     */
     public static function activate()
     {
         if (!wp_next_scheduled('quba_daily_sync_build_queue')) {
             wp_schedule_event(time(), 'daily', 'quba_daily_sync_build_queue');
         }
         if (!wp_next_scheduled('quba_process_sync_queue')) {
-            // Updated from 'hourly' to the custom 'thirty_minutes' hook
             wp_schedule_event(time(), 'thirty_minutes', 'quba_process_sync_queue');
         }
     }
 
-    /**
-     * Purges background scheduled events on plugin deactivation.
-     */
     public static function deactivate()
     {
         wp_clear_scheduled_hook('quba_daily_sync_build_queue');
         wp_clear_scheduled_hook('quba_process_sync_queue');
     }
 
-    /**
-     * Traverses the SOAP API matrix iteratively compiling all remote items into a transient queue buffer.
-     * @param string $sync_type Data matrix targeted for aggregation ('both', 'qualifications', 'units').
-     * @param int $specific_id Overriding absolute unique identifier for single item syncs.
-     * @return int|bool Valid count integer of queue size or false on failure.
-     */
-    public static function build_sync_queue($sync_type = 'both', $specific_id = 0)
+    public static function build_sync_queue($sync_type = 'both', $specific_ids = [])
     {
         $client = Quba_API::get_client();
         if (!$client) return false;
@@ -257,14 +213,21 @@ class Quba_Cron_Sync
         $queue = [];
         $processed_quals = [];
         $processed_units = [];
-        $specific_id = (int) $specific_id;
+
+        // Backward compatibility if a single integer is passed programmatically
+        if (!is_array($specific_ids)) {
+            $specific_ids = (int)$specific_ids > 0 ? [(int)$specific_ids] : [];
+        }
 
         // --- 1. QUALIFICATIONS EXTRACTION ---
         if ($sync_type === 'both' || $sync_type === 'qualifications') {
             $search_queries = [];
 
-            if ($specific_id > 0) {
-                $search_queries[] = ['qcaSector' => '', 'qualificationTitle' => '', 'qualificationID' => $specific_id];
+            if (!empty($specific_ids)) {
+                // If targeted IDs exist, push each into the extraction loop
+                foreach ($specific_ids as $id) {
+                    $search_queries[] = ['qcaSector' => '', 'qualificationTitle' => '', 'qualificationID' => $id];
+                }
             } else {
                 $sectors = Quba_API::get_qca_sectors();
                 if (!is_wp_error($sectors) && !($sectors instanceof Exception) && !empty($sectors)) {
@@ -330,47 +293,60 @@ class Quba_Cron_Sync
 
         // --- 2. UNITS EXTRACTION ---
         if ($sync_type === 'both' || $sync_type === 'units') {
-            try {
-                $req = [
-                    'unitID'              => $specific_id > 0 ? $specific_id : 0,
-                    'unitIdAlpha'         => '',
-                    'unitTitle'           => $specific_id > 0 ? '' : '%',
-                    'allOrPartTitle'      => true,
-                    'unitLevel'           => '',
-                    'unitCredits'         => 0,
-                    'qcaSector'           => '',
-                    'learnDirectCode'     => '',
-                    'qcaCode'             => '',
-                    'unitType'            => '',
-                    'provisionType'       => '',
-                    'includeHub'          => true,
-                    'moduleID'            => 0,
-                    'alternativeUnitCode' => '',
-                ];
-                $res = $client->QUBA_UnitSearch($req);
-                $xmlString = $res->QUBA_UnitSearchResult->any ?? '';
+            $unit_queries = [];
 
-                if ($xmlString) {
-                    libxml_use_internal_errors(true);
-                    $xml = new SimpleXMLElement(Quba_API::wrap_soap_envelope('QUBA_UnitSearch', $xmlString));
-                    $units = $xml->xpath('//QubaUnit');
-                    if ($units) {
-                        foreach ($units as $unit) {
-                            $data = [];
-                            foreach ($unit->children() as $child) {
-                                $data[$child->getName()] = trim((string) $child);
-                            }
+            if (!empty($specific_ids)) {
+                // If targeted IDs exist, push each into the extraction loop
+                foreach ($specific_ids as $id) {
+                    $unit_queries[] = ['unitID' => $id, 'unitTitle' => '']; // Remove wildcard if ID is supplied
+                }
+            } else {
+                $unit_queries[] = ['unitID' => 0, 'unitTitle' => '%'];
+            }
 
-                            $id = $data['ID'] ?? '';
-                            if ($id && !isset($processed_units[$id])) {
-                                $processed_units[$id] = true;
-                                $queue[] = ['type' => 'units', 'data' => $data];
+            foreach ($unit_queries as $uq) {
+                try {
+                    $req = [
+                        'unitID'              => $uq['unitID'],
+                        'unitIdAlpha'         => '',
+                        'unitTitle'           => $uq['unitTitle'],
+                        'allOrPartTitle'      => true,
+                        'unitLevel'           => '',
+                        'unitCredits'         => 0,
+                        'qcaSector'           => '',
+                        'learnDirectCode'     => '',
+                        'qcaCode'             => '',
+                        'unitType'            => '',
+                        'provisionType'       => '',
+                        'includeHub'          => true,
+                        'moduleID'            => 0,
+                        'alternativeUnitCode' => '',
+                    ];
+                    $res = $client->QUBA_UnitSearch($req);
+                    $xmlString = $res->QUBA_UnitSearchResult->any ?? '';
+
+                    if ($xmlString) {
+                        libxml_use_internal_errors(true);
+                        $xml = new SimpleXMLElement(Quba_API::wrap_soap_envelope('QUBA_UnitSearch', $xmlString));
+                        $units = $xml->xpath('//QubaUnit');
+                        if ($units) {
+                            foreach ($units as $unit) {
+                                $data = [];
+                                foreach ($unit->children() as $child) {
+                                    $data[$child->getName()] = trim((string) $child);
+                                }
+
+                                $id = $data['ID'] ?? '';
+                                if ($id && !isset($processed_units[$id])) {
+                                    $processed_units[$id] = true;
+                                    $queue[] = ['type' => 'units', 'data' => $data];
+                                }
                             }
                         }
                     }
+                } catch (Exception $e) {
+                    error_log('Unit Queue Error: ' . $e->getMessage());
                 }
-            } catch (Exception $e) {
-                error_log('Unit Queue Error: ' . $e->getMessage());
             }
         }
 
@@ -378,11 +354,6 @@ class Quba_Cron_Sync
         return count($queue);
     }
 
-    /**
-     * Consumes and processes a chunk of items strictly sourced from the transient queue block.
-     * @param int $batch_size Maximum execution ceiling for array chunk processing.
-     * @return int Size remaining sequentially in the processing queue.
-     */
     public static function process_batch($batch_size = 5)
     {
         $queue = get_option('quba_sync_queue', []);
@@ -405,21 +376,11 @@ class Quba_Cron_Sync
         return count($queue);
     }
 
-    /**
-     * WP-Cron delegator method to invoke standard batch iterations background-only.
-     */
     public static function process_batch_cron()
     {
         self::process_batch(50);
     }
 
-    /**
-     * Validates and formats Base64 vs native binary streams dynamically for disk commitment.
-     * @param string $base_content Raw API target string.
-     * @param string $path_suffix Mapped physical subdirectory location.
-     * @param string $filename Final generated local file identification.
-     * @return string|bool URL endpoint or false indicating critical failure.
-     */
     private static function save_pdf_stream($base_content, $path_suffix, $filename)
     {
         if (empty($base_content) || !is_string($base_content)) return false;
@@ -452,11 +413,6 @@ class Quba_Cron_Sync
         return false;
     }
 
-    /**
-     * Coordinates specific logical assignments converting API payload into local custom Post instances.
-     * @param SoapClient $client Passed Active Resource.
-     * @param array $data Sanitized attribute matrix dictating insertion variables.
-     */
     private static function process_single_qualification($client, $data)
     {
         if (!isset($data['ID'])) return;
@@ -480,11 +436,6 @@ class Quba_Cron_Sync
         }
     }
 
-    /**
-     * Coordinates specific logical assignments converting API payload into local Units custom Post instances.
-     * @param SoapClient $client Passed Active Resource.
-     * @param array $data Sanitized attribute matrix dictating insertion variables.
-     */
     private static function process_single_unit($client, $data)
     {
         if (!isset($data['ID'])) return;
@@ -547,12 +498,6 @@ class Quba_Cron_Sync
         }
     }
 
-    /**
-     * Executes WordPress insertion/update directives abstracting existing validation mappings dynamically.
-     * @param array $data Input payload representing parsed data parameters dynamically formatted.
-     * @param string $post_type The explicit CPT database key parameter mapped to logic execution.
-     * @return int Mapped generated post ID derived natively within WP environment blocks.
-     */
     private static function save_post_data($data, $post_type)
     {
         $check_id = 0;
@@ -600,13 +545,6 @@ class Quba_Cron_Sync
         }
     }
 
-    /**
-     * Executes raw file system IO writing variables securely within plugin contexts structure blocks.
-     * @param string $file_data Buffer containing payload array for disk execution block parameters.
-     * @param string $path_suffix Variable routing structure defining output file path dynamically mapping constraints.
-     * @param string $filename Native execution file title target variable mapping logic blocks.
-     * @return string|bool Correct localized mapping block for final document array extraction sequence.
-     */
     private static function store_document($file_data, $path_suffix, $filename)
     {
         $upload_dir = wp_upload_dir();
@@ -627,9 +565,6 @@ class Quba_Cron_Sync
  */
 class Quba_Admin
 {
-    /**
-     * Enqueues actions mapped to administrative backend execution schemas contextually limiting footprint properties.
-     */
     public static function init()
     {
         add_action('admin_menu', [__CLASS__, 'register_menu']);
@@ -639,9 +574,6 @@ class Quba_Admin
         add_action('wp_ajax_quba_process_batch', [__CLASS__, 'ajax_process_batch']);
     }
 
-    /**
-     * Constructs localized layout logic mapping within default options menu parameter scope blocks dynamically generating layout matrices.
-     */
     public static function register_menu()
     {
         add_submenu_page(
@@ -654,23 +586,16 @@ class Quba_Admin
         );
     }
 
-    /**
-     * Assures JS constraints dynamically isolated to strictly admin menu targets isolating frontend footprint logic dynamically.
-     * @param string $hook Reference to executing view parameter dynamically filtering context arrays logic states.
-     */
     public static function enqueue_admin_scripts($hook)
     {
         if ($hook !== 'tools_page_quba-sync') return;
 
-        wp_enqueue_script('quba-admin-sync', plugin_dir_url(__FILE__) . 'assets/js/admin-sync.js', ['jquery'], '2.6.0', true);
+        wp_enqueue_script('quba-admin-sync', plugin_dir_url(__FILE__) . 'assets/js/admin-sync.js', ['jquery'], '2.7.0', true);
         wp_localize_script('quba-admin-sync', 'qubaAdminAjax', [
             'nonce' => wp_create_nonce('quba_admin_nonce')
         ]);
     }
 
-    /**
-     * Manages HTML view layout structures injecting variables parameters rendering visual interactive interface constructs.
-     */
     public static function render_admin_page()
     {
 ?>
@@ -688,9 +613,9 @@ class Quba_Admin
 
                     <hr style="border-top: 1px solid #ddd; margin-bottom: 15px;">
 
-                    <label style="display: block; font-size: 14px; margin-bottom: 10px;"><strong>2. Optional: Sync Specific Target ID</strong></label>
-                    <input type="number" id="quba_sync_specific_id" placeholder="Enter Numeric _id" style="width: 100%; max-width: 300px;">
-                    <p class="description" style="font-size: 12px; color: #666; margin-top: 5px;">Leave blank to run a full synchronization. If you enter an ID here, the tool will instantly bypass the extraction loops and sync exclusively that single item.</p>
+                    <label style="display: block; font-size: 14px; margin-bottom: 10px;"><strong>2. Optional: Sync Specific Target ID(s)</strong></label>
+                    <input type="text" id="quba_sync_specific_id" placeholder="e.g. 1234, 5678, 9101" style="width: 100%; max-width: 300px;">
+                    <p class="description" style="font-size: 12px; color: #666; margin-top: 5px;">Leave blank to run a full synchronization. If you enter comma-separated IDs here, the tool will instantly bypass the extraction loops and sync exclusively those items.</p>
                 </div>
 
                 <button id="quba-start-sync" class="button button-primary button-large">Start Manual Sync</button>
@@ -707,26 +632,30 @@ class Quba_Admin
     <?php
     }
 
-    /**
-     * Formats API execution strings delegating execution target context dependencies mapping queue schemas dynamically.
-     */
     public static function ajax_init_sync()
     {
         check_ajax_referer('quba_admin_nonce', 'nonce');
         if (!current_user_can('manage_options')) wp_send_json_error('Unauthorized');
 
         $sync_type = isset($_POST['sync_type']) ? sanitize_text_field($_POST['sync_type']) : 'both';
-        $specific_id = isset($_POST['specific_id']) ? intval($_POST['specific_id']) : 0;
 
-        $total = Quba_Cron_Sync::build_sync_queue($sync_type, $specific_id);
+        $specific_ids = [];
+        if (!empty($_POST['specific_id'])) {
+            $raw_ids = explode(',', sanitize_text_field($_POST['specific_id']));
+            foreach ($raw_ids as $id) {
+                $val = intval(trim($id));
+                if ($val > 0) {
+                    $specific_ids[] = $val;
+                }
+            }
+        }
+
+        $total = Quba_Cron_Sync::build_sync_queue($sync_type, $specific_ids);
 
         if ($total === false) wp_send_json_error('Failed to connect to QUBA API.');
         wp_send_json_success(['total' => $total]);
     }
 
-    /**
-     * Executes process batches iteratively rendering output properties mapping values sequentially triggering internal cron execution.
-     */
     public static function ajax_process_batch()
     {
         check_ajax_referer('quba_admin_nonce', 'nonce');
@@ -743,9 +672,6 @@ class Quba_Admin
  */
 class Quba_Admin_Meta
 {
-    /**
-     * Hooks into the initial WordPress execution queue mapping properties rendering dynamic variables logic schemas properties.
-     */
     public static function init()
     {
         add_action('add_meta_boxes', [__CLASS__, 'register_meta_boxes']);
@@ -754,10 +680,6 @@ class Quba_Admin_Meta
         add_action('admin_footer', [__CLASS__, 'render_inline_js_css']);
     }
 
-    /**
-     * Validates localized hook string mappings enforcing native media execution contexts isolated directly parameter sequences array schema execution.
-     * @param string $hook Identifies target logic page validation schemas isolating dependency bloat executing conditions.
-     */
     public static function enqueue_scripts($hook)
     {
         global $post_type;
@@ -767,18 +689,11 @@ class Quba_Admin_Meta
         }
     }
 
-    /**
-     * Defines interactive meta block configurations triggering structural array injection rendering logic instances natively within post formats block layouts.
-     */
     public static function register_meta_boxes()
     {
         add_meta_box('quba_meta_data', 'QUBA Data & Documents', [__CLASS__, 'render_meta_box'], ['qualifications', 'units'], 'normal', 'high');
     }
 
-    /**
-     * Extracts values locally building structural layout parameters defining context array definitions executing variable schemas blocks mappings properties.
-     * @param WP_Post $post Internal variable context targeting execution object block definition schemas defining.
-     */
     public static function render_meta_box($post)
     {
         wp_nonce_field('quba_meta_nonce_action', 'quba_meta_nonce');
@@ -888,10 +803,6 @@ class Quba_Admin_Meta
     <?php
     }
 
-    /**
-     * Isolates form save events triggering updates context mapping arrays verifying definitions mapping variables natively.
-     * @param int $post_id Native identifier logic parameter extracting execution values definition schemas.
-     */
     public static function save_meta_boxes($post_id)
     {
         if (!isset($_POST['quba_meta_nonce']) || !wp_verify_nonce($_POST['quba_meta_nonce'], 'quba_meta_nonce_action')) return;
@@ -914,9 +825,6 @@ class Quba_Admin_Meta
         }
     }
 
-    /**
-     * Embeds internal javascript properties logic context rendering constraints block mapping executions styling dependencies.
-     */
     public static function render_inline_js_css()
     {
         global $post_type;
@@ -1161,12 +1069,6 @@ class Quba_Admin_Meta
  */
 class Quba_Render
 {
-    /**
-     * Orchestrates visual component generation formatting specific data execution parameters schemas dynamically context rendering.
-     * @param int $post_id Active query loop item referencing parameter target context properties matrix sequence schemas.
-     * @param string $post_type Fallback defining context parameters visual block dependencies structure variables rendering string formats logic target matrix instances array properties sequences schemas defining scope.
-     * @return string HTML logic node formatting variables blocks parameters sequences matrix elements properties natively.
-     */
     public static function qual_grid($post_id, $post_type = 'qualifications')
     {
         ob_start();
@@ -1211,33 +1113,16 @@ class Quba_Render
         return ob_get_clean();
     }
 
-    /**
-     * Invokes visual node creation format strings context mapping blocks array targeting.
-     * @param int $post_id Post Identifier defining target context logic schema blocks parameter execution sequence variables properties dynamically array strings elements parameters defining block structures sequences variables mapping parameters format structure definitions matrix properties defining array values elements.
-     * @param string $post_type Defines explicit scope format layout instances logic parameter schema values array mapping definition parameters structure mapping instance formats matrices logic blocks dynamically.
-     * @return string Validated parameter properties formatted execution properties arrays strings mapping dynamic values logic properties formats parameter variable structural nodes formats variables properties sequences natively.
-     */
     public static function unit_grid($post_id, $post_type = 'units')
     {
         return self::qual_grid($post_id, $post_type);
     }
 
-    /**
-     * Constructs standardized error reporting constraints isolating sequence parameters formatting variables schemas properties.
-     * @param string $msg Fallback reporting payload defining variables context schema parameters instances property sequences format properties target values block structures dynamic.
-     * @return string Safe validated array structures string format parameters definitions execution logic variables schemas elements constraints parameters defining instances schemas.
-     */
     public static function generate_error_output($msg)
     {
         return '<div class="error-message"><p>An error occurred: ' . esc_html($msg) . '</p></div>';
     }
 
-    /**
-     * Navigates native DB indices natively translating values mapping target blocks properties execution schema contexts elements parameters sequences matrices schemas logic definitions instances format sequences defining property elements schemas mappings target sequences elements dynamically properties natively mapping structures constraints parameters mapping properties definitions instances arrays structure variable logic properties formats instances arrays.
-     * @param string $meta_key Defining table parameter value constraints isolating structures values property formats elements array values constraints schema.
-     * @param string $meta_value Schema mapping sequence extracting values format definitions context dynamically array variables parameters mapping property schemas instances string variables logic formatting sequence structures.
-     * @return int Extracted parameter ID defining instances context values properties definition variable arrays execution logic formats definitions target formats parameters format.
-     */
     public static function get_post_id_by_meta_field($meta_key, $meta_value)
     {
         global $wpdb;
@@ -1249,11 +1134,6 @@ class Quba_Render
         return $wpdb->get_var($query);
     }
 
-    /**
-     * Refines and validates extraction node constraints block properties formatting parameters properties natively mapping blocks values variables logic formatting array values variables properties format schema variables.
-     * @param string $html Parameter values schema string format parameters properties definition execution values parameter schema properties natively structures target mapping instance strings constraints.
-     * @return string Validated parameter format properties properties variable strings mapping definition formats matrices mapping values instances target elements values mapping.
-     */
     public static function santize_html($html)
     {
         $html = str_replace('SPANstyle;', 'span style', $html);
@@ -1271,9 +1151,6 @@ class Quba_Render
  */
 class Quba_Controllers
 {
-    /**
-     * Embeds internal property instances formatting array parameters dynamically variable formats sequence matrix structure blocks values mapping elements target properties string variable values target block constraints.
-     */
     public static function init()
     {
         add_action('wp_enqueue_scripts', [__CLASS__, 'enqueue_assets']);
@@ -1290,17 +1167,14 @@ class Quba_Controllers
         add_filter('template_include', [__CLASS__, 'route_templates'], 99);
     }
 
-    /**
-     * Contextual target rendering dependencies isolating string formats matrix array values block elements values formatting parameter variables format parameters property schema variables formats property parameters mapping natively values formatting property string parameters.
-     */
     public static function enqueue_assets()
     {
         if (
             is_post_type_archive('qualifications') || is_post_type_archive('units') ||
             is_singular('qualifications') || is_singular('units') || is_tax('qualifications_cat')
         ) {
-            wp_enqueue_style('quba-main-css', plugin_dir_url(__FILE__) . 'assets/css/main.css', [], '2.6.0', 'all');
-            wp_enqueue_script('quba-main-js', plugin_dir_url(__FILE__) . 'assets/js/main.js', ['jquery'], '2.6.0', true);
+            wp_enqueue_style('quba-main-css', plugin_dir_url(__FILE__) . 'assets/css/main.css', [], '2.7.0', 'all');
+            wp_enqueue_script('quba-main-js', plugin_dir_url(__FILE__) . 'assets/js/main.js', ['jquery'], '2.7.0', true);
             wp_localize_script('quba-main-js', 'qubaAjaxObj', [
                 'ajaxUrl' => admin_url('admin-ajax.php'),
                 'nonce'   => wp_create_nonce('quba_ajax_nonce')
@@ -1308,11 +1182,6 @@ class Quba_Controllers
         }
     }
 
-    /**
-     * Maps parameter formats definition execution instances constraints variables formats string elements dynamically structure matrices schema targets block variables values variables target string context schemas properties parameters definitions mapping parameters mapping format mapping context defining array strings.
-     * @param string $template Internal path value sequence constraint mapping property strings elements array logic schema targets format values matrix property variables schemas values structure.
-     * @return string Variable formatted schema defining context format instance targets mapping property definition schemas strings mapping target constraints defining schema string matrices structure property elements format target parameters context properties array schemas formatting block execution instance parameters parameter array.
-     */
     public static function route_templates($template)
     {
         if (is_post_type_archive('qualifications') || is_post_type_archive('units') || is_tax('qualifications_cat')) {
@@ -1333,9 +1202,6 @@ class Quba_Controllers
         return $template;
     }
 
-    /**
-     * Processes string variable formats structure property elements mapping properties defining values parameters string instance mapping schema instances variables formatting definitions parameters formatting sequence matrix schemas parameters sequences defining formats parameters values variable array target sequence formats parameters elements.
-     */
     public static function archive_ajax_qualifications()
     {
         $paged = isset($_POST['paged']) ? max(1, intval($_POST['paged'])) : 1;
@@ -1398,9 +1264,6 @@ class Quba_Controllers
         wp_die();
     }
 
-    /**
-     * Executes sequence format parameter array block property values format values variables schema target definition structures format schemas strings formatting parameter elements mapping array instances context formatting property definitions sequences properties structure block mappings instances format targets property sequences.
-     */
     public static function archive_ajax_units()
     {
         $paged = isset($_POST['paged']) ? max(1, intval($_POST['paged'])) : 1;
@@ -1474,10 +1337,6 @@ class Quba_Controllers
         wp_die();
     }
 
-    /**
-     * Executes variables mapping array formats schemas target sequence property format parameter variables instances values variable mapping sequence structures constraints properties mapping parameters formatting string mapping target sequence strings formatting.
-     * @return string Variable formats schemas mapping property sequence blocks execution format parameters context array logic constraints format values sequences matrix string formatting array schemas strings target variables formatting defining parameter structures instance target format.
-     */
     public static function shortcode_related_qualifications()
     {
         ob_start();
@@ -1502,10 +1361,6 @@ class Quba_Controllers
         return ob_get_clean();
     }
 
-    /**
-     * Sequences parameters values properties variable logic matrix mapping context values sequence formatting instance strings format defining schema format property targets array mapping constraints array structure definition parameters formatting formatting target.
-     * @return string Validated parameter sequence blocks schemas formats mapping defining format string values schema sequence formatting variables definition mapping target format structures parameters schemas execution parameter instances context schema properties target instance values definitions context mapping constraints string array schemas values variable format variables parameter properties values.
-     */
     public static function shortcode_related_units()
     {
         ob_start();
