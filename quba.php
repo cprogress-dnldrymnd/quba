@@ -393,7 +393,7 @@ class Quba_Cron_Sync
      */
     public static function process_batch_cron()
     {
-        self::process_batch(20);
+        self::process_batch(50);
     }
 
     /**
