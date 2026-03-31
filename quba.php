@@ -234,8 +234,8 @@ class Quba_Cron_Sync
         }
 
         if (!wp_next_scheduled('quba_process_sync_queue')) {
-            // The batch processor can start immediately so manual queues process instantly
-            wp_schedule_event(time(), 'thirty_minutes', 'quba_process_sync_queue');
+            // Bind to the new 2-minute rapid fire sequence
+            wp_schedule_event(time(), 'two_minutes', 'quba_process_sync_queue');
         }
     }
 
