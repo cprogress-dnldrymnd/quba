@@ -200,9 +200,25 @@ class Quba_Cron_Sync
      */
     public static function init()
     {
+        // Inject custom 30-minute schedule into WP-Cron
+        add_filter('cron_schedules', [__CLASS__, 'add_custom_cron_intervals']);
+
         add_action('quba_daily_sync_build_queue', [__CLASS__, 'build_sync_queue']);
         add_action('quba_process_sync_queue', [__CLASS__, 'process_batch_cron']);
     }
+
+    /**
+     * Registers a custom 30-minute interval block in seconds (1800s).
+     */
+    public static function add_custom_cron_intervals($schedules)
+    {
+        $schedules['thirty_minutes'] = [
+            'interval' => 1800,
+            'display'  => 'Every 30 Minutes'
+        ];
+        return $schedules;
+    }
+
 
     /**
      * Injects the CRON scheduler mappings on plugin activation.
@@ -213,7 +229,8 @@ class Quba_Cron_Sync
             wp_schedule_event(time(), 'daily', 'quba_daily_sync_build_queue');
         }
         if (!wp_next_scheduled('quba_process_sync_queue')) {
-            wp_schedule_event(time(), 'hourly', 'quba_process_sync_queue');
+            // Updated from 'hourly' to the custom 'thirty_minutes' hook
+            wp_schedule_event(time(), 'thirty_minutes', 'quba_process_sync_queue');
         }
     }
 
