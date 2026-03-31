@@ -199,7 +199,13 @@ class Quba_Cron_Sync
     public static function init()
     {
         add_filter('cron_schedules', [__CLASS__, 'add_custom_cron_intervals']);
-        add_action('quba_daily_sync_build_queue', [__CLASS__, 'build_sync_queue']);
+
+        // Priority 5: Wipes the log first at 2:00 AM
+        add_action('quba_daily_sync_build_queue', [__CLASS__, 'clear_daily_logs'], 5);
+
+        // Priority 10: Runs the massive API extraction right after
+        add_action('quba_daily_sync_build_queue', [__CLASS__, 'build_sync_queue'], 10);
+
         add_action('quba_process_sync_queue', [__CLASS__, 'process_batch_cron']);
     }
 
