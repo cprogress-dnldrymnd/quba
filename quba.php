@@ -1191,7 +1191,7 @@ class Quba_Admin_Meta
             }
         </style>
 
-        <script>
+      <script>
             jQuery(document).ready(function($) {
                 $('.quba-tab-nav a').on('click', function(e) {
                     e.preventDefault();
@@ -1203,6 +1203,7 @@ class Quba_Admin_Meta
 
                 var repeaterContainer = $('#quba-repeater-container');
                 var frame;
+                var activeWrapper; // Add this to track the currently clicked row
 
                 function reindexRows() {
                     repeaterContainer.find('.quba-repeater-row').each(function(index) {
@@ -1282,7 +1283,9 @@ class Quba_Admin_Meta
                 repeaterContainer.on('click', '.quba-upload-file', function(e) {
                     e.preventDefault();
                     var btn = $(this);
-                    var wrapper = btn.closest('.quba-file-wrapper');
+                    
+                    // Update the active wrapper every time a button is clicked
+                    activeWrapper = btn.closest('.quba-file-wrapper');
 
                     if (frame) {
                         frame.open();
@@ -1299,9 +1302,10 @@ class Quba_Admin_Meta
 
                     frame.on('select', function() {
                         var attachment = frame.state().get('selection').first().toJSON();
-                        wrapper.find('.quba-file-id').val(attachment.id);
-                        wrapper.find('.quba-file-name').html('<em>' + attachment.filename + '</em>');
-                        wrapper.find('.quba-remove-file').show();
+                        // Target the activeWrapper instead of a locked closure variable
+                        activeWrapper.find('.quba-file-id').val(attachment.id);
+                        activeWrapper.find('.quba-file-name').html('<em>' + attachment.filename + '</em>');
+                        activeWrapper.find('.quba-remove-file').show();
                     });
                     frame.open();
                 });
