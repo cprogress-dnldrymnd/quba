@@ -1,5 +1,4 @@
 <?php
-
 /**
  * Plugin Name: Quba System Integration
  * Description: Integrates QUBA SOAP API, synchronizes units/qualifications via batched processes, and provides custom native templates & meta boxes. Includes persistent background sync logging.
@@ -12,7 +11,6 @@
 if (! defined('ABSPATH')) {
     exit; // Exit if accessed directly.
 }
-
 /**
  * Class Quba_API
  * Handles SOAP client connections and data retrieval.
@@ -436,6 +434,7 @@ class Quba_Cron_Sync
                                 foreach ($unit->children() as $child) {
                                     $data[$child->getName()] = trim((string) $child);
                                 }
+                                
 
                                 $id = $data['ID'] ?? '';
                                 if ($id && !isset($processed_units[$id])) {
@@ -693,18 +692,58 @@ class Quba_Cron_Sync
         $post_title = $data['Title'] ?? 'Untitled';
         $item_id = $data['ID'] ?? 'Unknown';
 
-        $post_data = ['post_type' => $post_type, 'post_title' => $post_title, 'post_status' => 'publish', 'post_content' => $post_content, 'meta_input' => $meta_input];
+       $post_data = [
+            'post_type' => $post_type,
+            'post_title' => $post_title,
+            'post_status' => 'publish',
+            'post_content' => $post_content
+        ];
 
+        
         if ($check_id) {
             $post_data['ID'] = $check_id;
             wp_update_post($post_data);
+            $post_id = $check_id;
             self::log_action("UPDATED {$post_type}: '{$post_title}' (WP_ID: {$check_id} | API_ID: {$item_id})");
-            return $check_id;
         } else {
-            $new_post_id = wp_insert_post($post_data);
-            self::log_action("CREATED {$post_type}: '{$post_title}' (WP_ID: {$new_post_id} | API_ID: {$item_id})");
-            return $new_post_id;
+            $post_id = wp_insert_post($post_data);
+            self::log_action("CREATED {$post_type}: '{$post_title}' (WP_ID: {$post_id} | API_ID: {$item_id})");
         }
+
+        # MANUAL META UPDATE (FIX)
+        foreach ($data as $key => $val) {
+            $meta_key = '_' . strtolower($key);
+
+            if ($val === '' || is_null($val)) {
+                update_post_meta($post_id, $meta_key, '');
+            } else {
+                update_post_meta($post_id, $meta_key, $val); //update new value
+            }
+        }
+
+        # Ensure ID fields always correct
+        if ($post_type === 'units') {
+            if (isset($data['ID'])) update_post_meta($post_id, '_id', $data['ID']);
+            if (isset($data['ID_Alpha'])) update_post_meta($post_id, '_id_alpha', $data['ID_Alpha']);
+        } else {
+            if (isset($data['ID'])) update_post_meta($post_id, '_id', $data['ID']);
+        }
+        
+        $api_keys = array_map('strtolower', array_keys($data));
+
+        $force_delete_fields = ['_reviewdate'];
+
+        foreach ($force_delete_fields as $field) {
+            $field_key = ltrim($field, '_'); // reviewdate
+
+            // ONLY clear if NOT present in API
+            if (!in_array($field_key, $api_keys)) {
+                update_post_meta($post_id, $field, '');
+                self::log_action("CLEARED {$field} (not in API)");
+            }
+        }
+
+        return $post_id;
     }
 
     /**
@@ -1191,7 +1230,7 @@ class Quba_Admin_Meta
             }
         </style>
 
-      <script>
+        <script>
             jQuery(document).ready(function($) {
                 $('.quba-tab-nav a').on('click', function(e) {
                     e.preventDefault();
@@ -1203,7 +1242,6 @@ class Quba_Admin_Meta
 
                 var repeaterContainer = $('#quba-repeater-container');
                 var frame;
-                var activeWrapper; // Add this to track the currently clicked row
 
                 function reindexRows() {
                     repeaterContainer.find('.quba-repeater-row').each(function(index) {
@@ -1283,9 +1321,7 @@ class Quba_Admin_Meta
                 repeaterContainer.on('click', '.quba-upload-file', function(e) {
                     e.preventDefault();
                     var btn = $(this);
-                    
-                    // Update the active wrapper every time a button is clicked
-                    activeWrapper = btn.closest('.quba-file-wrapper');
+                    var wrapper = btn.closest('.quba-file-wrapper');
 
                     if (frame) {
                         frame.open();
@@ -1302,10 +1338,9 @@ class Quba_Admin_Meta
 
                     frame.on('select', function() {
                         var attachment = frame.state().get('selection').first().toJSON();
-                        // Target the activeWrapper instead of a locked closure variable
-                        activeWrapper.find('.quba-file-id').val(attachment.id);
-                        activeWrapper.find('.quba-file-name').html('<em>' + attachment.filename + '</em>');
-                        activeWrapper.find('.quba-remove-file').show();
+                        wrapper.find('.quba-file-id').val(attachment.id);
+                        wrapper.find('.quba-file-name').html('<em>' + attachment.filename + '</em>');
+                        wrapper.find('.quba-remove-file').show();
                     });
                     frame.open();
                 });
@@ -1516,6 +1551,15 @@ class Quba_Controllers
             'post_status'    => 'publish',
             'meta_query'     => ['relation' => 'AND']
         ];
+        
+        // Show qualifications only when Regulation Start Date has been reached
+        $today = current_time('Y-m-d');
+        $args['meta_query'][] = [
+            'key'     => '_regulationstartdate',
+            'value'   => $today,
+            'compare' => '<=',
+            'type' => 'CHAR'
+        ];
 
         if (!empty($_POST['qualificationTitle']) && $_POST['qualificationTitle'] !== 'e') {
             $args['s'] = sanitize_text_field($_POST['qualificationTitle']);
@@ -1579,7 +1623,19 @@ class Quba_Controllers
             'posts_per_page' => 20,
             'paged'          => $paged,
             'post_status'    => 'publish',
-            'meta_query'     => ['relation' => 'AND']
+            'meta_query'     => []
+        ];
+        
+        /* Restricated Units */
+
+        if (!isset($args['meta_query'])) {
+            $args['meta_query'] = [];
+        }
+
+        $args['meta_query'][] = [
+            'key'     => '_classification1',
+            'value'   => 'Restricted Unit',
+            'compare' => '!='
         ];
 
         if (!empty($_POST['unitTitle'])) {
@@ -1607,6 +1663,10 @@ class Quba_Controllers
                 ['key' => '_unittype', 'value' => sanitize_text_field($_POST['unitType']), 'compare' => 'LIKE'],
                 ['key' => '_classification3', 'value' => sanitize_text_field($_POST['unitType']), 'compare' => 'LIKE']
             ];
+        }
+        
+        if (!empty($args['meta_query'])) {
+            $args['meta_query']['relation'] = 'AND';
         }
 
         $query = new WP_Query($args);
