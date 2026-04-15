@@ -435,7 +435,7 @@ class Quba_Cron_Sync
                                 foreach ($unit->children() as $child) {
                                     $data[$child->getName()] = trim((string) $child);
                                 }
-                                
+
 
                                 $id = $data['ID'] ?? '';
                                 if ($id && !isset($processed_units[$id])) {
@@ -681,14 +681,14 @@ class Quba_Cron_Sync
         $post_title = $data['Title'] ?? 'Untitled';
         $item_id = $data['ID'] ?? 'Unknown';
 
-       $post_data = [
+        $post_data = [
             'post_type' => $post_type,
             'post_title' => $post_title,
             'post_status' => 'publish',
             'post_content' => $post_content
         ];
 
-        
+
         if ($check_id) {
             $post_data['ID'] = $check_id;
             wp_update_post($post_data);
@@ -719,7 +719,7 @@ class Quba_Cron_Sync
         }
 
         // Convert API keys → meta keys
-        $api_keys = array_map(function($key) {
+        $api_keys = array_map(function ($key) {
             return '_' . strtolower($key);
         }, array_keys($data));
 
@@ -728,12 +728,12 @@ class Quba_Cron_Sync
 
         foreach ($existing_meta as $meta_key => $meta_values) {
 
-        // Only target your custom meta (skip WP/system fields)
-        if (
-            strpos($meta_key, '_') === 0 &&
-            !in_array($meta_key, ['_id', '_id_alpha']) &&
-            !str_starts_with($meta_key, '_wp_')
-        ) {
+            // Only target your custom meta (skip WP/system fields)
+            if (
+                strpos($meta_key, '_') === 0 &&
+                !in_array($meta_key, ['_id', '_id_alpha']) &&
+                !str_starts_with($meta_key, '_wp_')
+            ) {
 
                 // If meta NOT in API → clear it
                 if (!in_array($meta_key, $api_keys)) {
@@ -742,8 +742,8 @@ class Quba_Cron_Sync
                 }
             }
         }
-        
-        
+
+
 
         return $post_id;
     }
@@ -1244,6 +1244,7 @@ class Quba_Admin_Meta
 
                 var repeaterContainer = $('#quba-repeater-container');
                 var frame;
+                var activeWrapper; // Add this to track the currently clicked row
 
                 function reindexRows() {
                     repeaterContainer.find('.quba-repeater-row').each(function(index) {
@@ -1323,7 +1324,9 @@ class Quba_Admin_Meta
                 repeaterContainer.on('click', '.quba-upload-file', function(e) {
                     e.preventDefault();
                     var btn = $(this);
-                    var wrapper = btn.closest('.quba-file-wrapper');
+
+                    // Update the active wrapper every time a button is clicked
+                    activeWrapper = btn.closest('.quba-file-wrapper');
 
                     if (frame) {
                         frame.open();
@@ -1340,9 +1343,10 @@ class Quba_Admin_Meta
 
                     frame.on('select', function() {
                         var attachment = frame.state().get('selection').first().toJSON();
-                        wrapper.find('.quba-file-id').val(attachment.id);
-                        wrapper.find('.quba-file-name').html('<em>' + attachment.filename + '</em>');
-                        wrapper.find('.quba-remove-file').show();
+                        // Target the activeWrapper instead of a locked closure variable
+                        activeWrapper.find('.quba-file-id').val(attachment.id);
+                        activeWrapper.find('.quba-file-name').html('<em>' + attachment.filename + '</em>');
+                        activeWrapper.find('.quba-remove-file').show();
                     });
                     frame.open();
                 });
@@ -1555,7 +1559,7 @@ class Quba_Controllers
             'post_status'    => 'publish',
             'meta_query'     => ['relation' => 'AND']
         ];
-        
+
         // Show qualifications only when Regulation Start Date has been reached
         $today = current_time('Y-m-d');
         $args['meta_query'][] = [
@@ -1631,7 +1635,7 @@ class Quba_Controllers
             'post_status'    => 'publish',
             'meta_query'     => []
         ];
-        
+
         /* Restricated Units */
 
         if (!isset($args['meta_query'])) {
@@ -1670,7 +1674,7 @@ class Quba_Controllers
                 ['key' => '_classification3', 'value' => sanitize_text_field($_POST['unitType']), 'compare' => 'LIKE']
             ];
         }
-        
+
         if (!empty($args['meta_query'])) {
             $args['meta_query']['relation'] = 'AND';
         }
