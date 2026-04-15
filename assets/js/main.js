@@ -42,8 +42,17 @@ jQuery(document).ready(function ($) {
     }
 
     function setActiveTabFromParams() {
+        // First check query string for legacy support, then check the actual URL path
         const urlParams = new URLSearchParams(window.location.search);
-        const post_type = urlParams.get('post_type') || 'qualifications';
+        let post_type = urlParams.get('post_type');
+
+        if (!post_type) {
+            if (window.location.pathname.indexOf('/units') !== -1) {
+                post_type = 'units';
+            } else {
+                post_type = 'qualifications'; // Default fallback
+            }
+        }
 
         const activeButton = $(`.search-change-trigger[post_type="${post_type}"]`);
 
@@ -67,7 +76,8 @@ jQuery(document).ready(function ($) {
             urlParams.has('qcaSector') ||
             urlParams.has('qualificationType') ||
             urlParams.has('qcaCode') ||
-            urlParams.has('unitID');
+            urlParams.has('unitID') ||
+            urlParams.has('unitType');
     }
 
     function loadSavedFilters() {
@@ -92,8 +102,7 @@ jQuery(document).ready(function ($) {
 
     function saveFilters() {
         const filters = {};
-        const post_type = $('#qualification-filter').attr('search_type');
-        filters['post_type'] = post_type;
+        const post_type = $('#qualification-filter').attr('search_type') || 'qualifications';
 
         $('.search-field:not(.d-none) .trigger-type').each(function () {
             const name = $(this).attr('name');
@@ -112,7 +121,11 @@ jQuery(document).ready(function ($) {
             urlParams.set(key, filters[key]);
         }
 
-        const newUrl = window.location.pathname + '?' + urlParams.toString();
+        // Cleanly rewrite the URL path instead of adding post_type to the query
+        const basePath = '/' + post_type + '/';
+        const queryString = urlParams.toString() ? '?' + urlParams.toString() : '';
+        const newUrl = basePath + queryString;
+        
         window.history.replaceState({}, '', newUrl);
     }
 
@@ -152,7 +165,13 @@ jQuery(document).ready(function ($) {
                 $('.qualification-filter-holder').removeClass('searching');
             }, 500);
 
-            saveFilters();
+            // Strip post_type from URL query and push the new clean path to browser history
+            const urlParams = new URLSearchParams(window.location.search);
+            urlParams.delete('post_type'); 
+            const basePath = '/' + postType + '/';
+            const queryString = urlParams.toString() ? '?' + urlParams.toString() : '';
+            window.history.pushState({}, '', basePath + queryString);
+
             currentPage = 1; // Reset pagination on tab change
             performSearch(false);
         });
