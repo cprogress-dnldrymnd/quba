@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Plugin Name: Quba System Integration
  * Description: Integrates QUBA SOAP API, synchronizes units/qualifications via batched processes, and provides custom native templates & meta boxes. Includes persistent background sync logging.
@@ -677,18 +678,6 @@ class Quba_Cron_Sync
         $post_content = isset($data['QualificationSummary']) ? Quba_Render::santize_html($data['QualificationSummary']) : '';
         if (empty($post_content) && isset($data['Summary'])) $post_content = Quba_Render::santize_html($data['Summary']);
 
-        $meta_input = [];
-        foreach ($data as $key => $val) {
-            $meta_input['_' . strtolower($key)] = $val;
-        }
-
-        if ($post_type === 'units') {
-            if (isset($data['ID'])) $meta_input['_id'] = $data['ID'];
-            if (isset($data['ID_Alpha'])) $meta_input['_id_alpha'] = $data['ID_Alpha'];
-        } else {
-            if (isset($data['ID'])) $meta_input['_id'] = $data['ID'];
-        }
-
         $post_title = $data['Title'] ?? 'Untitled';
         $item_id = $data['ID'] ?? 'Unknown';
 
@@ -728,20 +717,33 @@ class Quba_Cron_Sync
         } else {
             if (isset($data['ID'])) update_post_meta($post_id, '_id', $data['ID']);
         }
-        
-        $api_keys = array_map('strtolower', array_keys($data));
 
-        $force_delete_fields = ['_reviewdate'];
+        // Convert API keys → meta keys
+        $api_keys = array_map(function($key) {
+            return '_' . strtolower($key);
+        }, array_keys($data));
 
-        foreach ($force_delete_fields as $field) {
-            $field_key = ltrim($field, '_'); // reviewdate
+        // Get all existing meta
+        $existing_meta = get_post_meta($post_id);
 
-            // ONLY clear if NOT present in API
-            if (!in_array($field_key, $api_keys)) {
-                update_post_meta($post_id, $field, '');
-                self::log_action("CLEARED {$field} (not in API)");
+        foreach ($existing_meta as $meta_key => $meta_values) {
+
+        // Only target your custom meta (skip WP/system fields)
+        if (
+            strpos($meta_key, '_') === 0 &&
+            !in_array($meta_key, ['_id', '_id_alpha']) &&
+            !str_starts_with($meta_key, '_wp_')
+        ) {
+
+                // If meta NOT in API → clear it
+                if (!in_array($meta_key, $api_keys)) {
+                    update_post_meta($post_id, $meta_key, '');
+                    self::log_action("CLEARED {$meta_key} (not in API)");
+                }
             }
         }
+        
+        
 
         return $post_id;
     }
@@ -1548,6 +1550,8 @@ class Quba_Controllers
             'post_type'      => 'qualifications',
             'posts_per_page' => 21,
             'paged'          => $paged,
+            'orderby'     => 'title',
+            'order'     => 'ASC',
             'post_status'    => 'publish',
             'meta_query'     => ['relation' => 'AND']
         ];
@@ -1622,6 +1626,8 @@ class Quba_Controllers
             'post_type'      => 'units',
             'posts_per_page' => 20,
             'paged'          => $paged,
+            'orderby'     => 'title',
+            'order'     => 'ASC',
             'post_status'    => 'publish',
             'meta_query'     => []
         ];
