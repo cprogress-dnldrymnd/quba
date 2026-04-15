@@ -16,6 +16,9 @@ jQuery(document).ready(function ($) {
         performSearch(false); // Initial load is always a fresh search
     }
 
+    /**
+     * Initializes the accordion layout functionality for the search items
+     */
     function initAccordion() {
         $('#glh').val('');
         $('#tqt').val('');
@@ -41,8 +44,10 @@ jQuery(document).ready(function ($) {
         });
     }
 
+    /**
+     * Determines which tab should be active based on the URL path or query parameters
+     */
     function setActiveTabFromParams() {
-        // First check query string for legacy support, then check the actual URL path
         const urlParams = new URLSearchParams(window.location.search);
         let post_type = urlParams.get('post_type');
 
@@ -68,6 +73,9 @@ jQuery(document).ready(function ($) {
         }
     }
 
+    /**
+     * Checks if the current URL contains active search parameters
+     */
     function hasSearchParams() {
         const urlParams = new URLSearchParams(window.location.search);
         return urlParams.has('Title') ||
@@ -80,6 +88,9 @@ jQuery(document).ready(function ($) {
             urlParams.has('unitType');
     }
 
+    /**
+     * Hydrates the form fields using the active URL query parameters on page load
+     */
     function loadSavedFilters() {
         const urlParams = new URLSearchParams(window.location.search);
 
@@ -100,6 +111,9 @@ jQuery(document).ready(function ($) {
         });
     }
 
+    /**
+     * Constructs and pushes URL parameters based on actively selected form fields
+     */
     function saveFilters() {
         const filters = {};
         const post_type = $('#qualification-filter').attr('search_type') || 'qualifications';
@@ -129,7 +143,12 @@ jQuery(document).ready(function ($) {
         window.history.replaceState({}, '', newUrl);
     }
 
+    /**
+     * Connects all interaction events (typing, clicking, changing tabs) to the AJAX processor
+     */
     function bindSearchTriggers() {
+        
+        // Handle keyboard typing delays for text inputs
         $('.trigger-type').on('keyup', function () {
             clearTimeout(typingTimer);
             typingTimer = setTimeout(function () {
@@ -139,12 +158,14 @@ jQuery(document).ready(function ($) {
             }, doneTypingInterval);
         });
 
+        // Handle dropdown selection changes
         $('.trigger-ajax-change').on('change', function (e) {
             saveFilters();
             currentPage = 1; // Reset pagination on new filter
             performSearch(false);
         });
 
+        // Handle switching between the primary Post Type tabs
         $('.search-change-trigger').on('click', function (e) {
             e.preventDefault();
 
@@ -160,17 +181,18 @@ jQuery(document).ready(function ($) {
 
             $('.search-field').addClass('d-none');
             $(searchType).removeClass('d-none');
+            
+            // CLEAR ALL FORM FIELDS ON TAB SWITCH
+            $('.trigger-type').val('');
+            $('.trigger-ajax-change').val('');
 
             setTimeout(function () {
                 $('.qualification-filter-holder').removeClass('searching');
             }, 500);
 
-            // Strip post_type from URL query and push the new clean path to browser history
-            const urlParams = new URLSearchParams(window.location.search);
-            urlParams.delete('post_type'); 
+            // Strip all query parameters entirely and set a clean base path
             const basePath = '/' + postType + '/';
-            const queryString = urlParams.toString() ? '?' + urlParams.toString() : '';
-            window.history.pushState({}, '', basePath + queryString);
+            window.history.pushState({}, '', basePath);
 
             currentPage = 1; // Reset pagination on tab change
             performSearch(false);
@@ -186,6 +208,9 @@ jQuery(document).ready(function ($) {
         });
     }
 
+    /**
+     * Executes the main WordPress AJAX request to fetch filtered data matrices
+     */
     function performSearch(isLoadMore = false) {
         var activePostType = $('#qualification-filter').attr('search_type') || 'qualifications';
         var actionName = activePostType === 'units' ? 'archive_ajax_units' : 'archive_ajax_qualifications';
