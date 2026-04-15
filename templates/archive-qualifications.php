@@ -107,9 +107,9 @@ $chev = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="cu
                                 <?php $unit_type_val = isset($_GET['unitType']) ? sanitize_text_field($_GET['unitType']) : ''; ?>
                                 <select class="trigger-ajax-change" name="unitType" id="unitType">
                                     <option value="">Unit Type</option>
-                                    <option value="QEunits" <?= selected($unit_type_val, 'QEunits', false) ?>>Quality Endorsed Unit</option>
-                                    <option value="QUAL" <?= selected($unit_type_val, 'QUAL', false) ?>>Regulated Qualification Unit</option>
-                                    <option value="ACC" <?= selected($unit_type_val, 'ACC', false) ?>>Access to HE Unit</option>
+                                    <option value="Quality Endorsed" <?= selected($unit_type_val, 'Quality Endorsed', false) ?>>Quality Endorsed Unit</option>
+                                    <option value="Qualification" <?= selected($unit_type_val, 'Qualification', false) ?>>Regulated Qualification Unit</option>
+                                    <option value="Access" <?= selected($unit_type_val, 'Access', false) ?>>Access to HE Unit</option>
                                 </select>
                             </div>
                             <div class="col-lg-6 search-field search-qual type">
