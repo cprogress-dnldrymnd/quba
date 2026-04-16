@@ -1554,8 +1554,8 @@ class Quba_Controllers
             'post_type'      => 'qualifications',
             'posts_per_page' => 21,
             'paged'          => $paged,
-            'orderby'     => 'title',
-            'order'     => 'ASC',
+            'orderby'        => 'title',
+            'order'          => 'ASC',
             'post_status'    => 'publish',
             'meta_query'     => ['relation' => 'AND']
         ];
@@ -1566,7 +1566,7 @@ class Quba_Controllers
             'key'     => '_regulationstartdate',
             'value'   => $today,
             'compare' => '<=',
-            'type' => 'CHAR'
+            'type'    => 'CHAR'
         ];
 
         if (!empty($_POST['qualificationTitle']) && $_POST['qualificationTitle'] !== 'e') {
@@ -1575,9 +1575,27 @@ class Quba_Controllers
         if (!empty($_POST['qualificationLevel']) && trim($_POST['qualificationLevel']) !== '') {
             $args['meta_query'][] = ['key' => '_level', 'value' => sanitize_text_field($_POST['qualificationLevel']), 'compare' => '='];
         }
+
+        // --- INTELLIGENT SECTOR FILTER (QUALIFICATIONS) ---
         if (!empty($_POST['qcaSector'])) {
-            $args['meta_query'][] = ['key' => '_classification1', 'value' => sanitize_text_field($_POST['qcaSector']), 'compare' => 'LIKE'];
+            $sector_val = sanitize_text_field($_POST['qcaSector']);
+
+            // Extract the numeric prefix (e.g., "1" from "1. Health..." or "1.1" from "1.1 Medicine")
+            if (preg_match('/^(\d+(?:\.\d+)?)/', $sector_val, $matches)) {
+                // Convert real decimals to regex-safe [.] blocks to prevent WordPress escaping issues
+                $prefix = str_replace('.', '[.]', $matches[1]);
+                $args['meta_query'][] = [
+                    'key'     => '_classification1',
+                    'value'   => '^' . $prefix . '([.]| |$)', // Matches the exact root sector and all its subsectors
+                    'compare' => 'REGEXP'
+                ];
+            } else {
+                // Standard fallback
+                $args['meta_query'][] = ['key' => '_classification1', 'value' => $sector_val, 'compare' => 'LIKE'];
+            }
         }
+        // --------------------------------------------------
+
         if (!empty($_POST['qualificationNumber'])) {
             $args['meta_query'][] = ['key' => '_qualificationreferencenumber', 'value' => sanitize_text_field($_POST['qualificationNumber']), 'compare' => 'LIKE'];
         }
@@ -1630,14 +1648,13 @@ class Quba_Controllers
             'post_type'      => 'units',
             'posts_per_page' => 20,
             'paged'          => $paged,
-            'orderby'     => 'title',
-            'order'     => 'ASC',
+            'orderby'        => 'title',
+            'order'          => 'ASC',
             'post_status'    => 'publish',
             'meta_query'     => []
         ];
 
-        /* Restricated Units */
-
+        /* Restricted Units */
         if (!isset($args['meta_query'])) {
             $args['meta_query'] = [];
         }
@@ -1654,9 +1671,27 @@ class Quba_Controllers
         if (!empty($_POST['unitLevel'])) {
             $args['meta_query'][] = ['key' => '_level', 'value' => sanitize_text_field($_POST['unitLevel']), 'compare' => '='];
         }
+
+        // --- INTELLIGENT SECTOR FILTER (UNITS) ---
         if (!empty($_POST['qcaSector'])) {
-            $args['meta_query'][] = ['key' => '_qcasector', 'value' => sanitize_text_field($_POST['qcaSector']), 'compare' => 'LIKE'];
+            $sector_val = sanitize_text_field($_POST['qcaSector']);
+
+            // Extract the numeric prefix (e.g., "1" from "1. Health..." or "1.1" from "1.1 Medicine")
+            if (preg_match('/^(\d+(?:\.\d+)?)/', $sector_val, $matches)) {
+                // Convert real decimals to regex-safe [.] blocks to prevent WordPress escaping issues
+                $prefix = str_replace('.', '[.]', $matches[1]);
+                $args['meta_query'][] = [
+                    'key'     => '_qcasector',
+                    'value'   => '^' . $prefix . '([.]| |$)', // Matches the exact root sector and all its subsectors
+                    'compare' => 'REGEXP'
+                ];
+            } else {
+                // Standard fallback
+                $args['meta_query'][] = ['key' => '_qcasector', 'value' => $sector_val, 'compare' => 'LIKE'];
+            }
         }
+        // -----------------------------------------
+
         if (!empty($_POST['qcaCode'])) {
             $args['meta_query'][] = [
                 'relation' => 'OR',
