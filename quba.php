@@ -1696,7 +1696,7 @@ class Quba_Controllers
             $args['meta_query'][] = [
                 'relation' => 'OR',
                 ['key' => '_nationalcode', 'value' => sanitize_text_field($_POST['qcaCode']), 'compare' => 'LIKE'],
-                ['key' => '_id_alpha', 'value' => sanitize_text_field($_POST['qcaCode']), 'compare' => 'LIKE']
+                ['key' => '_unitreferencenumber', 'value' => sanitize_text_field($_POST['qcaCode']), 'compare' => 'LIKE']
             ];
         }
         if (!empty($_POST['unitID'])) {
