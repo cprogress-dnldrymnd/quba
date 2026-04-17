@@ -16,9 +16,7 @@ $unitQualification = get_post_meta($post_id, '_related_qualifications', true);
 
 $additional_documents = get_post_meta($post_id, 'additional_documents', true);
 ?>
-<pre>
-    <?php var_dump(get_post_meta(get_the_ID())) ?>
-</pre>
+
 <div id="primary" class="row-fluid">
     <div id="content" role="main" class="span8 offset2">
         
@@ -32,6 +30,11 @@ $additional_documents = get_post_meta($post_id, 'additional_documents', true);
             echo '<p>Unit Document Local PDF: ' . ($unitPdf ? 'Available' : 'Not Available') . '</p>';
             echo '<p>Related Qualifications Cached Count: ' . (is_array($unitQualification) ? count($unitQualification) : 0) . '</p>';
             echo '</div>';
+            ?>
+<pre>
+    <?php var_dump(get_post_meta(get_the_ID())) ?>
+</pre>
+            <?php
         }
         ?>
 
