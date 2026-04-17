@@ -16,9 +16,7 @@ $unitQualification = get_post_meta($post_id, '_related_qualifications', true);
 
 $additional_documents = get_post_meta($post_id, 'additional_documents', true);
 ?>
-<pre>
-    <?php var_dump(get_post_meta(get_the_ID())) ?>
-</pre>
+
 <div id="primary" class="row-fluid">
     <div id="content" role="main" class="span8 offset2">
         
@@ -47,7 +45,16 @@ $additional_documents = get_post_meta($post_id, 'additional_documents', true);
                         <div class="row">
                             <div class="col-sm-6">
                                 <div class="key-info-items">
-                                    <div class="key-info-item"><strong>Unit Code:</strong> <?= esc_html(get_post_meta($post_id, '_nationalcode', true) ?: 'N/A') ?></div>
+                                    <?php
+                                        $national_code = get_post_meta($post_id, '_nationalcode', true);
+                                        $unit_ref = get_post_meta($post_id, '_unitreferencenumber', true);
+
+                                        $unit_code = $national_code ?: $unit_ref ?: 'N/A';
+                                    ?>
+
+                                    <div class="key-info-item">
+                                        <strong>Unit Code:</strong> <?= esc_html($unit_code) ?>
+                                    </div>
                                     <div class="key-info-item"><strong>Open Awards Unit ID:</strong> <?= esc_html(get_post_meta($post_id, '_id_alpha', true) ?: 'N/A') ?></div>
                                         <?php
                                         $level = get_post_meta($post_id, '_level', true);
