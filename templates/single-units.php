@@ -16,7 +16,9 @@ $unitQualification = get_post_meta($post_id, '_related_qualifications', true);
 
 $additional_documents = get_post_meta($post_id, 'additional_documents', true);
 ?>
-
+<pre>
+    <?php var_dump(get_post_meta(get_the_ID())) ?>
+</pre>
 <div id="primary" class="row-fluid">
     <div id="content" role="main" class="span8 offset2">
         
