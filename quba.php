@@ -354,7 +354,7 @@ class Quba_Cron_Sync
                         'unitID'              => '',
                         'includeHub'          => false,
                         'centreID'            => '',
-                        'includeFutureQualificationsInQUBAQualificationSearch' => true,
+                        
                     ];
                     $res = $client->QUBA_QualificationSearch($req);
                     $xmlString = $res->QUBA_QualificationSearchResult->any ?? '';
