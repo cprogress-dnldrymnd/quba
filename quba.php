@@ -352,7 +352,7 @@ class Quba_Cron_Sync
                         'qcaSector'           => $sq['qcaSector'],
                         'provisionType'       => '',
                         'unitID'              => '',
-                        'includeHub'          => false,
+                        'includeHub'          => true,
                         'centreID'            => ''
                     ];
                     $res = $client->QUBA_QualificationSearch($req);
@@ -1560,6 +1560,7 @@ class Quba_Controllers
             'meta_query'     => ['relation' => 'AND']
         ];
 
+        
         // Show qualifications only when Regulation Start Date has been reached
         $today = current_time('Y-m-d');
         $args['meta_query'][] = [
