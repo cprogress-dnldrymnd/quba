@@ -878,7 +878,7 @@ class Quba_Admin
                 <div id="quba-debug-panel" style="display:none; margin-top: 20px; padding: 15px; background: #fff; border: 1px solid #ccd0d4; border-left: 4px solid #dba617;">
                     <h3 style="margin-top:0; font-size: 14px;">Diagnostic Request Data</h3>
                     <p style="font-size: 12px; color: #666; margin-top: 0; margin-bottom: 10px;">Displays the exact payload sent to the Quartz SOAP API and the raw response status.</p>
-                    <pre id="quba-debug-output" style="font-family: monospace; font-size: 11px; white-space: pre-wrap; word-wrap: break-word; background: #f0f0f1; padding: 10px; max-height: 250px; overflow-y: auto; border: 1px solid #c3c4c7; margin: 0;"></pre>
+                    <pre id="quba-debug-output" style="font-family: monospace; font-size: 11px; white-space: pre-wrap; word-wrap: break-word; background: #f0f0f1; padding: 10px; max-height: 500px; overflow-y: auto; border: 1px solid #c3c4c7; margin: 0;"></pre>
                 </div>
 
             </div>
