@@ -353,7 +353,8 @@ class Quba_Cron_Sync
                         'provisionType'       => '',
                         'unitID'              => '',
                         'includeHub'          => false,
-                        'centreID'            => ''
+                        'centreID'            => '',
+                        'includeFutureQualificationsInQUBAQualificationSearch' => true,
                     ];
                     $res = $client->QUBA_QualificationSearch($req);
                     $xmlString = $res->QUBA_QualificationSearchResult->any ?? '';
@@ -620,7 +621,7 @@ class Quba_Cron_Sync
                 'provisionType'       => '',
                 'unitID'              => $numeric_id,
                 'includeHub'          => false,
-                'centreID'            => ''
+                'centreID'            => '',
             ];
             $qual_res = $client->QUBA_QualificationSearch($qual_req);
             $q_xmlString = $qual_res->QUBA_QualificationSearchResult->any ?? '';
