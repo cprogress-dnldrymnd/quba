@@ -870,9 +870,6 @@ class Quba_Admin
                     <strong>Status:</strong> <span id="quba-sync-status">Idle. Ready to sync.</span>
                 </div>
 
-                <div style="width: 100%; background-color: #f0f0f1; border-radius: 3px; margin-top: 15px; height: 30px; border: 1px solid #c3c4c7; overflow: hidden;">
-                    <div id="quba-sync-progress-bar" style="width: 0%; height: 100%; background-color: #2271b1; transition: width 0.3s ease; text-align: center; color: white; line-height: 30px; font-weight: bold;">0%</div>
-                </div>
 
                 <div style="width: 100%; background-color: #f0f0f1; border-radius: 3px; margin-top: 15px; height: 30px; border: 1px solid #c3c4c7; overflow: hidden;">
                     <div id="quba-sync-progress-bar" style="width: 0%; height: 100%; background-color: #2271b1; transition: width 0.3s ease; text-align: center; color: white; line-height: 30px; font-weight: bold;">0%</div>
