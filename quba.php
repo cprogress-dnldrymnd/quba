@@ -361,6 +361,13 @@ class Quba_Cron_Sync
                         'centreID'            => 0   // REQUIRED: Int32 must be 0
                     ];
                     $res = $client->QUBA_QualificationSearch($req);
+
+                    $debug_data = [
+                        'method' => 'QUBA_QualificationSearch',
+                        'parameters' => $req,
+                        'response_status' => $xmlString ? 'Data Received (' . strlen($xmlString) . ' bytes of XML)' : '0 Items / Empty Response'
+                    ];
+
                     $xmlString = $res->QUBA_QualificationSearchResult->any ?? '';
 
                     if ($xmlString) {
@@ -428,6 +435,12 @@ class Quba_Cron_Sync
                         'alternativeUnitCode' => '',
                     ];
                     $res = $client->QUBA_UnitSearch($req);
+
+                    $debug_data = [
+                        'method' => 'QUBA_UnitSearch',
+                        'parameters' => $req,
+                        'response_status' => $xmlString ? 'Data Received (' . strlen($xmlString) . ' bytes of XML)' : '0 Items / Empty Response'
+                    ];
                     $xmlString = $res->QUBA_UnitSearchResult->any ?? '';
 
                     if ($xmlString) {
@@ -458,7 +471,7 @@ class Quba_Cron_Sync
 
         self::log_action("SUCCESS: Queue rebuilt. Total Items Pending: " . count($queue));
         update_option('quba_sync_queue', $queue, false);
-        return count($queue);
+        return ['total' => count($queue), 'debug' => $debug_data];
     }
 
     /**
@@ -860,6 +873,22 @@ class Quba_Admin
                 <div style="width: 100%; background-color: #f0f0f1; border-radius: 3px; margin-top: 15px; height: 30px; border: 1px solid #c3c4c7; overflow: hidden;">
                     <div id="quba-sync-progress-bar" style="width: 0%; height: 100%; background-color: #2271b1; transition: width 0.3s ease; text-align: center; color: white; line-height: 30px; font-weight: bold;">0%</div>
                 </div>
+
+                <div style="width: 100%; background-color: #f0f0f1; border-radius: 3px; margin-top: 15px; height: 30px; border: 1px solid #c3c4c7; overflow: hidden;">
+                    <div id="quba-sync-progress-bar" style="width: 0%; height: 100%; background-color: #2271b1; transition: width 0.3s ease; text-align: center; color: white; line-height: 30px; font-weight: bold;">0%</div>
+                </div>
+
+                <div id="quba-debug-panel" style="display:none; margin-top: 20px; padding: 15px; background: #fff; border: 1px solid #ccd0d4; border-left: 4px solid #dba617;">
+                    <h3 style="margin-top:0; font-size: 14px;">Diagnostic Request Data</h3>
+                    <p style="font-size: 12px; color: #666; margin-top: 0; margin-bottom: 10px;">Displays the exact payload sent to the Quartz SOAP API and the raw response status.</p>
+                    <pre id="quba-debug-output" style="font-family: monospace; font-size: 11px; white-space: pre-wrap; word-wrap: break-word; background: #f0f0f1; padding: 10px; max-height: 250px; overflow-y: auto; border: 1px solid #c3c4c7; margin: 0;"></pre>
+                </div>
+
+            </div>
+
+            <div style="background: #fff; padding: 20px; border: 1px solid #ccd0d4; max-width: 600px; margin-top: 20px; display: inline-block; vertical-align: top; margin-left: 20px;">
+
+
             </div>
 
             <div style="background: #fff; padding: 20px; border: 1px solid #ccd0d4; max-width: 600px; margin-top: 20px; display: inline-block; vertical-align: top; margin-left: 20px;">
@@ -931,7 +960,10 @@ class Quba_Admin
         $total = Quba_Cron_Sync::build_sync_queue($sync_type, $specific_ids);
 
         if ($total === false) wp_send_json_error('Failed to connect to QUBA API.');
-        wp_send_json_success(['total' => $total]);
+       wp_send_json_success([
+            'total' => $result['total'],
+            'debug' => $result['debug']
+        ]);
     }
 
     /**

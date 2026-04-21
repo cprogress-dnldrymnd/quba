@@ -33,6 +33,18 @@ jQuery(document).ready(function ($) {
                     totalItems = response.data.total;
                     processedItems = 0;
 
+                    // Print Debug Information to the UI
+                    if (response.data.debug) {
+                        var debugHtml = "=== API ENDPOINT ===\n" + response.data.debug.method + "\n\n";
+                        debugHtml += "=== PARAMETERS SENT ===\n" + JSON.stringify(response.data.debug.parameters, null, 2) + "\n\n";
+                        debugHtml += "=== RAW RESPONSE ===\n" + response.data.debug.response_status;
+
+                        $('#quba-debug-output').text(debugHtml);
+                        $('#quba-debug-panel').slideDown();
+                    } else {
+                        $('#quba-debug-panel').hide();
+                    }
+
                     if (totalItems === 0) {
                         $statusText.html('<span style="color:#b32d2e;"><strong>Queue built, but 0 items were found. Ensure the API is responsive and the ID(s) exist.</strong></span>');
                         $startButton.prop('disabled', false).text('Run Sync Again');
