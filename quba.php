@@ -362,13 +362,15 @@ class Quba_Cron_Sync
                     ];
                     $res = $client->QUBA_QualificationSearch($req);
 
+
+
+                    $xmlString = $res->QUBA_QualificationSearchResult->any ?? '';
+
                     $debug_data = [
                         'method' => 'QUBA_QualificationSearch',
                         'parameters' => $req,
                         'response_status' => $xmlString ? 'Data Received (' . strlen($xmlString) . ' bytes of XML)' : '0 Items / Empty Response'
                     ];
-
-                    $xmlString = $res->QUBA_QualificationSearchResult->any ?? '';
 
                     if ($xmlString) {
                         libxml_use_internal_errors(true);
@@ -436,12 +438,14 @@ class Quba_Cron_Sync
                     ];
                     $res = $client->QUBA_UnitSearch($req);
 
+
+                    $xmlString = $res->QUBA_UnitSearchResult->any ?? '';
+
                     $debug_data = [
                         'method' => 'QUBA_UnitSearch',
                         'parameters' => $req,
                         'response_status' => $xmlString ? 'Data Received (' . strlen($xmlString) . ' bytes of XML)' : '0 Items / Empty Response'
                     ];
-                    $xmlString = $res->QUBA_UnitSearchResult->any ?? '';
 
                     if ($xmlString) {
                         libxml_use_internal_errors(true);
@@ -958,7 +962,7 @@ class Quba_Admin
         $result = Quba_Cron_Sync::build_sync_queue($sync_type, $specific_ids);
 
         if ($result === false) wp_send_json_error('Failed to connect to QUBA API.');
-        
+
         wp_send_json_success([
             'total' => $result['total'],
             'debug' => $result['debug']
