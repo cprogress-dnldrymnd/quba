@@ -344,16 +344,21 @@ class Quba_Cron_Sync
 
             foreach ($search_queries as $sq) {
                 try {
+                    /**
+                     * Formats the SOAP request for QUBA_QualificationSearch.
+                     * @note Array keys and order strictly matched to live .NET stack trace signature.
+                     * @note Int32 fields must be 0, not empty strings.
+                     */
                     $req = [
-                        'qualificationID'     => $sq['qualificationID'],
-                        'qualificationTitle'  => $sq['qualificationTitle'],
+                        'qualificationID'     => (int)$sq['qualificationID'],
+                        'qualificationTitle'  => (string)$sq['qualificationTitle'],
                         'qualificationLevel'  => '',
-                        'qualificationNumber' => '',
-                        'qcaSector'           => $sq['qcaSector'],
-                        'provisionType'       => '',
-                        'unitID'              => '',
-                        'includeHub'          => false,
-                        'centreID'            => ''
+                        'qualificationNumber' => '', // REVERTED: The live WSDL requires this, not ReferenceNumber
+                        'provisionType'       => '', // REORDERED to match server signature
+                        'unitID'              => 0,  // REQUIRED: Int32 must be 0
+                        'qcaSector'           => (string)$sq['qcaSector'],
+                        'includeHub'          => true, // REQUIRED: Fetch centrally managed quals
+                        'centreID'            => 0   // REQUIRED: Int32 must be 0
                     ];
                     $res = $client->QUBA_QualificationSearch($req);
                     $xmlString = $res->QUBA_QualificationSearchResult->any ?? '';
