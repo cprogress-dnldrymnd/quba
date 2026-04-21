@@ -348,13 +348,12 @@ class Quba_Cron_Sync
                         'qualificationID'     => $sq['qualificationID'],
                         'qualificationTitle'  => $sq['qualificationTitle'],
                         'qualificationLevel'  => '',
-                        'qualificationReferenceNumber' => '',
+                        'qualificationNumber' => '',
                         'qcaSector'           => $sq['qcaSector'],
                         'provisionType'       => '',
                         'unitID'              => '',
                         'includeHub'          => false,
-                        'centreID'            => '',
-                        
+                        'centreID'            => ''
                     ];
                     $res = $client->QUBA_QualificationSearch($req);
                     $xmlString = $res->QUBA_QualificationSearchResult->any ?? '';
@@ -616,12 +615,12 @@ class Quba_Cron_Sync
                 'qualificationID'     => 0,
                 'qualificationTitle'  => '',
                 'qualificationLevel'  => '',
-                'qualificationReferenceNumber' => '',
+                'qualificationNumber' => '',
                 'qcaSector'           => '',
                 'provisionType'       => '',
                 'unitID'              => $numeric_id,
                 'includeHub'          => false,
-                'centreID'            => '',
+                'centreID'            => ''
             ];
             $qual_res = $client->QUBA_QualificationSearch($qual_req);
             $q_xmlString = $qual_res->QUBA_QualificationSearchResult->any ?? '';
