@@ -1607,7 +1607,7 @@ class Quba_Controllers
         $args['meta_query'][] = [
             'key'     => '_regulationstartdate',
             'value'   => $today,
-            'compare' => '>=',
+            'compare' => '<=',
             'type'    => 'CHAR'
         ];
 
