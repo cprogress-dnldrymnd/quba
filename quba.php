@@ -396,7 +396,7 @@ class Quba_Cron_Sync
                                     $queue[] = ['type' => 'qualifications', 'data' => $data];
                                 }
 
-                                $debug_data['response_status'] = $data;
+                                $debug_data['response_status'] = json_encode($data);
                             }
                         }
                     }
@@ -465,7 +465,7 @@ class Quba_Cron_Sync
                                     $queue[] = ['type' => 'units', 'data' => $data];
                                 }
 
-                                $debug_data['response_status'] = $data;
+                                $debug_data['response_status'] = json_encode($data);
                             }
                         }
                     }
