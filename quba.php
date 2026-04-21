@@ -362,18 +362,14 @@ class Quba_Cron_Sync
                     ];
                     $res = $client->QUBA_QualificationSearch($req);
 
-
-                    $xmlString = $res->QUBA_QualificationSearchResult->any ?? '';
-
-
-                    // Convert XML string to a simple object for JSON output
-                    $xmlObject = !empty($xmlString) ? simplexml_load_string(Quba_API::wrap_soap_envelope('QUBA_QualificationSearch', $xmlString)) : null;
-
                     $debug_data = [
                         'method' => 'QUBA_QualificationSearch',
                         'parameters' => $req,
-                        'response_data' => $xmlObject // Pass the object instead of the raw string
+                        'response_status' => $xmlString ? 'Data Received (' . strlen($xmlString) . ' bytes of XML)' : '0 Items / Empty Response'
                     ];
+
+                    $xmlString = $res->QUBA_QualificationSearchResult->any ?? '';
+                    
 
                     if ($xmlString) {
                         libxml_use_internal_errors(true);
@@ -441,17 +437,12 @@ class Quba_Cron_Sync
                     ];
                     $res = $client->QUBA_UnitSearch($req);
 
-
-                    $xmlString = $res->QUBA_UnitSearchResult->any ?? '';
-
-                    // Convert XML string to a simple object for JSON output
-                    $xmlObject = !empty($xmlString) ? simplexml_load_string(Quba_API::wrap_soap_envelope('QUBA_UnitSearch', $xmlString)) : null;
-
                     $debug_data = [
                         'method' => 'QUBA_UnitSearch',
                         'parameters' => $req,
-                        'response_data' => $xmlObject // Pass the object instead of the raw string
+                        'response_status' => $xmlString ? 'Data Received (' . strlen($xmlString) . ' bytes of XML)' : '0 Items / Empty Response'
                     ];
+                    $xmlString = $res->QUBA_UnitSearchResult->any ?? '';
 
                     if ($xmlString) {
                         libxml_use_internal_errors(true);
