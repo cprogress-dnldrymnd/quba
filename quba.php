@@ -357,7 +357,7 @@ class Quba_Cron_Sync
                         'provisionType'       => '', // REORDERED to match server signature
                         'unitID'              => 0,  // REQUIRED: Int32 must be 0
                         'qcaSector'           => (string)$sq['qcaSector'],
-                        'includeHub'          => true, // REQUIRED: Fetch centrally managed quals
+                        'includeHub'          => false, // REQUIRED: Fetch centrally managed quals
                         'centreID'            => 0   // REQUIRED: Int32 must be 0
                     ];
                     $res = $client->QUBA_QualificationSearch($req);
