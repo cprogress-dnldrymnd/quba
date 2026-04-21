@@ -348,7 +348,7 @@ class Quba_Cron_Sync
                         'qualificationID'     => $sq['qualificationID'],
                         'qualificationTitle'  => $sq['qualificationTitle'],
                         'qualificationLevel'  => '',
-                        'qualificationReferenceNumber' => '',
+                        'qualificationNumber' => '',
                         'qcaSector'           => $sq['qcaSector'],
                         'provisionType'       => '',
                         'unitID'              => '',
