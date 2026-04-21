@@ -358,7 +358,7 @@ class Quba_Cron_Sync
                         'unitID'              => 0,  // REQUIRED: Int32 must be 0
                         'qcaSector'           => (string)$sq['qcaSector'],
                         'includeHub'          => false, // REQUIRED: Fetch centrally managed quals
-                        'centreID'            => 0 ,  // REQUIRED: Int32 must be 0,
+                        'centreID'            => 0,  // REQUIRED: Int32 must be 0,
                         'includeFutureQualificationsInQUBAQualificationSearch' => true
                     ];
                     $res = $client->QUBA_QualificationSearch($req);
@@ -370,7 +370,6 @@ class Quba_Cron_Sync
                     $debug_data = [
                         'method' => 'QUBA_QualificationSearch',
                         'parameters' => $req,
-                        'response_status' => $xmlString ? 'Data Received (' . strlen($xmlString) . ' bytes of XML)' : '0 Items / Empty Response'
                     ];
 
                     if ($xmlString) {
@@ -397,6 +396,8 @@ class Quba_Cron_Sync
                                     $processed_quals[$id] = true;
                                     $queue[] = ['type' => 'qualifications', 'data' => $data];
                                 }
+
+                                $debug_data['response_status'] = $data;
                             }
                         }
                     }
@@ -445,7 +446,6 @@ class Quba_Cron_Sync
                     $debug_data = [
                         'method' => 'QUBA_UnitSearch',
                         'parameters' => $req,
-                        'response_status' => $xmlString ? 'Data Received (' . strlen($xmlString) . ' bytes of XML)' : '0 Items / Empty Response'
                     ];
 
                     if ($xmlString) {
@@ -465,6 +465,8 @@ class Quba_Cron_Sync
                                     $processed_units[$id] = true;
                                     $queue[] = ['type' => 'units', 'data' => $data];
                                 }
+
+                                $debug_data['response_status'] = $data;
                             }
                         }
                     }
