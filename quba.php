@@ -366,8 +366,8 @@ class Quba_Cron_Sync
                     $responseData = null;
                     if ($xmlString) {
                         libxml_use_internal_errors(true);
-                        $xmlParsed = simplexml_load_string(Quba_API::wrap_soap_envelope('QUBA_QualificationSearch', $xmlString));
-                        if ($xmlParsed) {
+                        $xmlParsed = simplexml_load_string($xmlString);
+                        if ($xmlParsed !== false) {
                             $responseData = json_decode(json_encode($xmlParsed), true);
                         }
                     }
@@ -448,8 +448,8 @@ class Quba_Cron_Sync
                     $responseData = null;
                     if ($xmlString) {
                         libxml_use_internal_errors(true);
-                        $xmlParsed = simplexml_load_string(Quba_API::wrap_soap_envelope('QUBA_UnitSearch', $xmlString));
-                        if ($xmlParsed) {
+                        $xmlParsed = simplexml_load_string($xmlString);
+                        if ($xmlParsed !== false) {
                             $responseData = json_decode(json_encode($xmlParsed), true);
                         }
                     }
