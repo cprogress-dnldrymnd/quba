@@ -361,14 +361,21 @@ class Quba_Cron_Sync
                         'centreID'            => 0   // REQUIRED: Int32 must be 0
                     ];
                     $res = $client->QUBA_QualificationSearch($req);
-
-                    $debug_data = [
-                        'method' => 'QUBA_QualificationSearch',
-                        'parameters' => $req,
-                        'response_status' => $xmlString ? 'Data Received (' . strlen($xmlString) . ' bytes of XML)' : '0 Items / Empty Response'
-                    ];
-
                     $xmlString = $res->QUBA_QualificationSearchResult->any ?? '';
+
+                    $responseData = null;
+                    if ($xmlString) {
+                        libxml_use_internal_errors(true);
+                        $xmlParsed = simplexml_load_string(Quba_API::wrap_soap_envelope('QUBA_QualificationSearch', $xmlString));
+                        if ($xmlParsed) {
+                            $responseData = json_decode(json_encode($xmlParsed), true);
+                        }
+                    }
+                    $debug_data = [
+                        'method'        => 'QUBA_QualificationSearch',
+                        'parameters'    => $req,
+                        'response_data' => $responseData ?? ($xmlString ? 'Received but unparseable' : '0 Items / Empty Response')
+                    ];
                     
 
                     if ($xmlString) {
@@ -436,13 +443,21 @@ class Quba_Cron_Sync
                         'alternativeUnitCode' => '',
                     ];
                     $res = $client->QUBA_UnitSearch($req);
-
-                    $debug_data = [
-                        'method' => 'QUBA_UnitSearch',
-                        'parameters' => $req,
-                        'response_status' => $xmlString ? 'Data Received (' . strlen($xmlString) . ' bytes of XML)' : '0 Items / Empty Response'
-                    ];
                     $xmlString = $res->QUBA_UnitSearchResult->any ?? '';
+
+                    $responseData = null;
+                    if ($xmlString) {
+                        libxml_use_internal_errors(true);
+                        $xmlParsed = simplexml_load_string(Quba_API::wrap_soap_envelope('QUBA_UnitSearch', $xmlString));
+                        if ($xmlParsed) {
+                            $responseData = json_decode(json_encode($xmlParsed), true);
+                        }
+                    }
+                    $debug_data = [
+                        'method'        => 'QUBA_UnitSearch',
+                        'parameters'    => $req,
+                        'response_data' => $responseData ?? ($xmlString ? 'Received but unparseable' : '0 Items / Empty Response')
+                    ];
 
                     if ($xmlString) {
                         libxml_use_internal_errors(true);
