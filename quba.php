@@ -351,9 +351,9 @@ class Quba_Cron_Sync
                         'qualificationNumber' => '',
                         'qcaSector'           => $sq['qcaSector'],
                         'provisionType'       => '',
-                        'unitID'              => '',
+                        'unitID'              => 0,
                         'includeHub'          => false,
-                        'centreID'            => ''
+                        'centreID'            => 0
                     ];
                     $res = $client->QUBA_QualificationSearch($req);
                     $xmlString = $res->QUBA_QualificationSearchResult->any ?? '';
