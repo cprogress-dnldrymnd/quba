@@ -348,12 +348,12 @@ class Quba_Cron_Sync
                         'qualificationID'     => $sq['qualificationID'],
                         'qualificationTitle'  => $sq['qualificationTitle'],
                         'qualificationLevel'  => '',
-                        'qualificationNumber' => '',
+                        'qualificationReferenceNumber' => '',
                         'qcaSector'           => $sq['qcaSector'],
                         'provisionType'       => '',
-                        'unitID'              => 0,
+                        'unitID'              => '',
                         'includeHub'          => false,
-                        'centreID'            => 0
+                        'centreID'            => ''
                     ];
                     $res = $client->QUBA_QualificationSearch($req);
                     $xmlString = $res->QUBA_QualificationSearchResult->any ?? '';
@@ -615,7 +615,7 @@ class Quba_Cron_Sync
                 'qualificationID'     => 0,
                 'qualificationTitle'  => '',
                 'qualificationLevel'  => '',
-                'qualificationNumber' => '',
+                'qualificationReferenceNumber' => '',
                 'qcaSector'           => '',
                 'provisionType'       => '',
                 'unitID'              => $numeric_id,
@@ -1560,7 +1560,6 @@ class Quba_Controllers
             'meta_query'     => ['relation' => 'AND']
         ];
 
-        
         // Show qualifications only when Regulation Start Date has been reached
         $today = current_time('Y-m-d');
         $args['meta_query'][] = [
