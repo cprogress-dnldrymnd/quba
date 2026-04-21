@@ -954,10 +954,12 @@ class Quba_Admin
             }
         }
 
-        $total = Quba_Cron_Sync::build_sync_queue($sync_type, $specific_ids);
+        // Change this line from $total to $result:
+        $result = Quba_Cron_Sync::build_sync_queue($sync_type, $specific_ids);
 
-        if ($total === false) wp_send_json_error('Failed to connect to QUBA API.');
-       wp_send_json_success([
+        if ($result === false) wp_send_json_error('Failed to connect to QUBA API.');
+
+        wp_send_json_success([
             'total' => $result['total'],
             'debug' => $result['debug']
         ]);
