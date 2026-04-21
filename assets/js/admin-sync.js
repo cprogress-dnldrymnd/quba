@@ -37,11 +37,7 @@ jQuery(document).ready(function ($) {
                     if (response.data.debug) {
                         var debugHtml = "=== API ENDPOINT ===\n" + response.data.debug.method + "\n\n";
                         debugHtml += "=== PARAMETERS SENT ===\n" + JSON.stringify(response.data.debug.parameters, null, 2) + "\n\n";
-                        var rawResponse = response.data.debug.response_data;
-                        debugHtml += "=== RAW RESPONSE (JSON) ===\n" +
-                            (typeof rawResponse === 'object'
-                                ? JSON.stringify(rawResponse, null, 2)
-                                : rawResponse);
+                        debugHtml += "=== RAW RESPONSE ===\n" + response.data.debug.response_status;
 
                         $('#quba-debug-output').text(debugHtml);
                         $('#quba-debug-panel').slideDown();
