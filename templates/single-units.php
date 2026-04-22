@@ -31,9 +31,7 @@ $additional_documents = get_post_meta($post_id, 'additional_documents', true);
             echo '<p>Related Qualifications Cached Count: ' . (is_array($unitQualification) ? count($unitQualification) : 0) . '</p>';
             echo '</div>';
             ?>
-<pre>
-    <?php var_dump(get_post_meta(get_the_ID())) ?>
-</pre>
+
             <?php
         }
         ?>
@@ -77,7 +75,7 @@ $additional_documents = get_post_meta($post_id, 'additional_documents', true);
                             <div class="col-sm-6">
                                 <div class="key-info-items">
                                     <div class="key-info-item"><strong>Unit Type:</strong> <?= esc_html(get_post_meta($post_id, '_classification3', true) ?: 'N/A') ?></div>
-                                    <div class="key-info-item"><strong>Start Date:</strong> <?= get_post_meta($post_id, '_recognitiondate', true) ? date('d F Y', strtotime(get_post_meta($post_id, '_recognitiondate', true))) : 'N/A' ?></div>
+                                    <div class="key-info-item"><strong>Start Date:</strong> <?= get_post_meta($post_id, '_regulationstartdate', true) ? date('d F Y', strtotime(get_post_meta($post_id, '_regulationstartdate', true))) : 'N/A' ?></div>
                                     <div class="key-info-item"><strong>Review Date:</strong> <?= get_post_meta($post_id, '_reviewdate', true) ? date('d F Y', strtotime(get_post_meta($post_id, '_reviewdate', true))) : 'N/A' ?></div>
                                     <div class="key-info-item"><strong>End Date:</strong> <?= get_post_meta($post_id, '_expirydate', true) ? date('d F Y', strtotime(get_post_meta($post_id, '_expirydate', true))) : 'N/A' ?></div>
                                     <div class="key-info-item"><strong>Guided Learning Hours:</strong> <?= esc_html(get_post_meta($post_id, '_glh', true) ?: 'N/A') ?></div>
