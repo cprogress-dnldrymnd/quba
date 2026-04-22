@@ -1440,7 +1440,13 @@ class Quba_Render
         }
 
         if ($type === 'date') {
-            $keyinfo = date("d F Y", strtotime($keyinfo));
+            try {
+                $dt = new DateTime($keyinfo);
+                $keyinfo = $dt->format('d F Y');
+            } catch (Exception $e) {
+                // Fallback for malformed strings
+                $keyinfo = date("d F Y", strtotime($keyinfo));
+            }
         }
 
         return "<div class='key-info-item'><strong>{$label}:</strong> " . esc_html($keyinfo) . "</div>";
