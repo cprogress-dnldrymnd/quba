@@ -79,7 +79,7 @@ $additional_documents = get_post_meta($post_id, 'additional_documents', true);
                             <div class="col-sm-6">
                                 <div class="key-info-items">
                                     <?php
-                                    echo key_info('regulationstartdate', 'Start Date', 'date');
+                                    echo key_info('regulationenddate', 'Start Date', 'date');
 
                                     $review_date = get_post_meta($post_id, '_reviewdate', true);        
                                     if ($review_date) {
