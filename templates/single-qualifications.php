@@ -14,22 +14,6 @@ $id = get_post_meta($post_id, '_id', true);
 $pdf_url = get_post_meta($post_id, '_purpose_statement_url', true);
 $baseURL = get_post_meta($post_id, '_qualification_guide_url', true);
 
-function key_info($key, $label, $type = 'string') {
-    global $post;
-    $keyinfo = get_post_meta($post->ID, '_' . $key, true);
-    
-    if ($key == 'level' && !empty($keyinfo)) {
-        if (strpos($keyinfo, 'E') === 0) $keyinfo = 'Entry Level ' . str_replace('E', '', $keyinfo);
-        elseif (strpos($keyinfo, 'L') === 0) $keyinfo = 'Level ' . str_replace('L', '', $keyinfo);
-    }
-    
-    if ($type == 'date' && !empty($keyinfo)) {
-        $keyinfo = date("d F Y", strtotime($keyinfo));
-    }
-    
-    return $keyinfo ? "<div class='key-info-item'><strong>$label:</strong> " . esc_html($keyinfo) . "</div>" : '';
-}
-
 $additional_documents = get_post_meta($post_id, 'additional_documents', true);
 ?>
 

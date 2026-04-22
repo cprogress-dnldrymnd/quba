@@ -1846,6 +1846,33 @@ class Quba_Controllers
         echo '</div>';
         return ob_get_clean();
     }
+
+    /**
+     * Extracts, formats, and renders specific post meta key information into standardized HTML structures dynamically mapping to UI layouts.
+     * @param int $post_id Native identifier logic parameter extracting execution values definition schemas.
+     * @param string $key Meta key identifier (excluding the preceding underscore).
+     * @param string $label Human-readable label for the UI rendering sequence.
+     * @param string $type Formatting type designation ('string' or 'date') mapping to structural output sequences.
+     * @return string Formatted HTML string execution node parameter property instance context array values.
+     */
+    public static function render_key_info($post_id, $key, $label, $type = 'string')
+    {
+        $keyinfo = get_post_meta($post_id, '_' . $key, true);
+
+        if ($key === 'level' && !empty($keyinfo)) {
+            if (strpos($keyinfo, 'E') === 0) {
+                $keyinfo = 'Entry Level ' . str_replace('E', '', $keyinfo);
+            } elseif (strpos($keyinfo, 'L') === 0) {
+                $keyinfo = 'Level ' . str_replace('L', '', $keyinfo);
+            }
+        }
+
+        if ($type === 'date' && !empty($keyinfo)) {
+            $keyinfo = date("d F Y", strtotime($keyinfo));
+        }
+
+        return $keyinfo ? "<div class='key-info-item'><strong>{$label}:</strong> " . esc_html($keyinfo) . "</div>" : '';
+    }
 }
 
 // Bootstrap
