@@ -61,7 +61,6 @@ $additional_documents = get_post_meta($post_id, 'additional_documents', true);
                                 <div class="key-info-items">
                                     <?php
                                     echo key_info('type', 'Qualification Type');
-                                    
                                     $sector = get_post_meta($post_id, '_classification1', true);
                                     echo "<div class='key-info-item'><strong>Sector:</strong> " . (!empty($sector) ? esc_html($sector) : 'N/A') . "</div>";
 
