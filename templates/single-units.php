@@ -1,4 +1,5 @@
-<?php 
+<?php
+
 /**
  * Template Name: Unit Single
  * Description: Renders individual unit pages utilizing localized WP Meta architecture.
@@ -6,7 +7,7 @@
  * Author URI: https://digitallydisruptive.co.uk/
  */
 
-get_header(); 
+get_header();
 
 $post_id = get_the_ID();
 $id = get_post_meta($post_id, '_id_alpha', true) ?: get_post_meta($post_id, '_id', true);
@@ -19,8 +20,8 @@ $additional_documents = get_post_meta($post_id, 'additional_documents', true);
 
 <div id="primary" class="row-fluid">
     <div id="content" role="main" class="span8 offset2">
-        
-        <?php 
+
+        <?php
         if (current_user_can('administrator')) {
             echo '<div class="debug-info">';
             echo '<h3>Debug Information (Admin Only)</h3>';
@@ -30,9 +31,9 @@ $additional_documents = get_post_meta($post_id, 'additional_documents', true);
             echo '<p>Unit Document Local PDF: ' . ($unitPdf ? 'Available' : 'Not Available') . '</p>';
             echo '<p>Related Qualifications Cached Count: ' . (is_array($unitQualification) ? count($unitQualification) : 0) . '</p>';
             echo '</div>';
-            ?>
+        ?>
 
-            <?php
+        <?php
         }
         ?>
 
@@ -49,36 +50,27 @@ $additional_documents = get_post_meta($post_id, 'additional_documents', true);
                             <div class="col-sm-6">
                                 <div class="key-info-items">
                                     <?php
-                                        $national_code = get_post_meta($post_id, '_nationalcode', true);
-                                        $unit_ref = get_post_meta($post_id, '_unitreferencenumber', true);
-
-                                        $unit_code = $national_code ?: $unit_ref ?: 'N/A';
+                                    $national_code = get_post_meta($post_id, '_nationalcode', true);
+                                    $unit_ref = get_post_meta($post_id, '_unitreferencenumber', true);
+                                    $unit_code = $national_code ?: $unit_ref ?: 'N/A';
                                     ?>
-
                                     <div class="key-info-item">
                                         <strong>Unit Code:</strong> <?= esc_html($unit_code) ?>
                                     </div>
-                                    <div class="key-info-item"><strong>Open Awards Unit ID:</strong> <?= esc_html(get_post_meta($post_id, '_id_alpha', true) ?: 'N/A') ?></div>
-                                        <?php
-                                        $level = get_post_meta($post_id, '_level', true);
-                                        if (!empty($level)) {
-                                            if (strpos($level, 'E') === 0) $level = 'Entry Level ' . substr($level, 1);
-                                            elseif (strpos($level, 'L') === 0) $level = 'Level ' . substr($level, 1);
-                                        }
-                                        ?>
-                                    <div class="key-info-item"><strong>Level:</strong> <?= $level ? esc_html($level) : 'N/A' ?></div>
-                                    <div class="key-info-item"><strong>Sector:</strong> <?= esc_html(get_post_meta($post_id, '_qcasector', true) ?: 'N/A') ?></div>
-                                    <div class="key-info-item"><strong>Credit Value:</strong> <?= esc_html(get_post_meta($post_id, '_credits', true) ?: 'N/A') ?></div>
-                                    <div class="key-info-item"><strong>Risk Rating:</strong> <?= esc_html(get_post_meta($post_id, '_classification2', true) ?: 'N/A') ?></div>
+                                    <?= Quba_Render::render_key_info($post_id, 'id_alpha', 'Open Awards Unit ID', 'string', 'N/A') ?>
+                                    <?= Quba_Render::render_key_info($post_id, 'level', 'Level', 'string', 'N/A') ?>
+                                    <?= Quba_Render::render_key_info($post_id, 'qcasector', 'Sector', 'string', 'N/A') ?>
+                                    <?= Quba_Render::render_key_info($post_id, 'credits', 'Credit Value', 'string', 'N/A') ?>
+                                    <?= Quba_Render::render_key_info($post_id, 'classification2', 'Risk Rating', 'string', 'N/A') ?>
                                 </div>
                             </div>
                             <div class="col-sm-6">
                                 <div class="key-info-items">
-                                    <div class="key-info-item"><strong>Unit Type:</strong> <?= esc_html(get_post_meta($post_id, '_classification3', true) ?: 'N/A') ?></div>
-                                    <div class="key-info-item"><strong>Start Date:</strong> <?= get_post_meta($post_id, '_recognitiondate', true) ? date('d F Y', strtotime(get_post_meta($post_id, '_recognitiondate', true))) : 'N/A' ?></div>
-                                    <div class="key-info-item"><strong>Review Date:</strong> <?= get_post_meta($post_id, '_reviewdate', true) ? date('d F Y', strtotime(get_post_meta($post_id, '_reviewdate', true))) : 'N/A' ?></div>
-                                    <div class="key-info-item"><strong>End Date:</strong> <?= get_post_meta($post_id, '_expirydate', true) ? date('d F Y', strtotime(get_post_meta($post_id, '_expirydate', true))) : 'N/A' ?></div>
-                                    <div class="key-info-item"><strong>Guided Learning Hours:</strong> <?= esc_html(get_post_meta($post_id, '_glh', true) ?: 'N/A') ?></div>
+                                    <?= Quba_Render::render_key_info($post_id, 'classification3', 'Unit Type', 'string', 'N/A') ?>
+                                    <?= Quba_Render::render_key_info($post_id, 'recognitiondate', 'Start Date', 'date', 'N/A') ?>
+                                    <?= Quba_Render::render_key_info($post_id, 'reviewdate', 'Review Date', 'date', 'N/A') ?>
+                                    <?= Quba_Render::render_key_info($post_id, 'expirydate', 'End Date', 'date', 'N/A') ?>
+                                    <?= Quba_Render::render_key_info($post_id, 'glh', 'Guided Learning Hours', 'string', 'N/A') ?>
                                 </div>
                             </div>
                         </div>
@@ -90,18 +82,18 @@ $additional_documents = get_post_meta($post_id, 'additional_documents', true);
         <section class="info-boxes">
             <div class="container">
                 <div class="row g-4">
-                    
+
                     <?php if ($unitPdf): ?>
-                    <div class="col-12">
-                        <div class="info-box">
-                            <div class="inner justify-content-start mx-0 mw-100">
-                                <h2 class="h3-style-1">Unit Content (PDF)</h2>
-                                <div class="button-box-v2 button-primary">
-                                    <a href="<?php echo esc_url($unitPdf); ?>" target="_blank" rel="noopener noreferrer">Download PDF</a>
+                        <div class="col-12">
+                            <div class="info-box">
+                                <div class="inner justify-content-start mx-0 mw-100">
+                                    <h2 class="h3-style-1">Unit Content (PDF)</h2>
+                                    <div class="button-box-v2 button-primary">
+                                        <a href="<?php echo esc_url($unitPdf); ?>" target="_blank" rel="noopener noreferrer">Download PDF</a>
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
                     <?php endif; ?>
 
                     <div class="col-12">
@@ -126,44 +118,44 @@ $additional_documents = get_post_meta($post_id, 'additional_documents', true);
                                                 $post = get_page_by_path($title_slug . '-' . $code_part, OBJECT, 'qualifications');
                                                 if ($post) $mapped_post_id = $post->ID;
                                             }
-                                            
+
                                             $qualification_link = $mapped_post_id ? get_permalink($mapped_post_id) : home_url('/qualifications/' . sanitize_title($qualification['title']) . '-' . preg_replace('/[^a-zA-Z0-9]+/', '', $qualification['code']));
                                     ?>
-                                    <div class="qualification-box" data-index="<?php echo $index; ?>">
-                                        <div class="qualification-header">
-                                            <span> 
-                                                <a href="<?php echo esc_url($qualification_link); ?>" target="_blank" style="color: #000;">
-                                                    <?php echo esc_html($qualification['title']); ?>
-                                                </a>
-                                            </span>
-                                            <button class="expand-btn"><?php echo $expandButton; ?></button>
-                                        </div>
-                                        <div class="qualification-details" style="display: none;">
-                                            <div class="detail-row">
-                                                <span class="detail-label">Qualification Code:</span>
-                                                <span class="detail-value"><?php echo esc_html($qualification['code']); ?></span>
+                                            <div class="qualification-box" data-index="<?php echo $index; ?>">
+                                                <div class="qualification-header">
+                                                    <span>
+                                                        <a href="<?php echo esc_url($qualification_link); ?>" target="_blank" style="color: #000;">
+                                                            <?php echo esc_html($qualification['title']); ?>
+                                                        </a>
+                                                    </span>
+                                                    <button class="expand-btn"><?php echo $expandButton; ?></button>
+                                                </div>
+                                                <div class="qualification-details" style="display: none;">
+                                                    <div class="detail-row">
+                                                        <span class="detail-label">Qualification Code:</span>
+                                                        <span class="detail-value"><?php echo esc_html($qualification['code']); ?></span>
+                                                    </div>
+                                                    <?php
+                                                    $level = $qualification['level'];
+                                                    if (!empty($level)) {
+                                                        if (strpos($level, 'E') === 0) $level = 'Entry Level ' . str_replace('E', '', $level);
+                                                        elseif (strpos($level, 'L') === 0) $level = 'Level ' . str_replace('L', '', $level);
+                                                    }
+                                                    ?>
+                                                    <div class="detail-row">
+                                                        <span class="detail-label">Level:</span>
+                                                        <span class="detail-value"><?php echo esc_html($level); ?></span>
+                                                    </div>
+                                                    <div class="detail-row">
+                                                        <span class="detail-label">Minimum Credits:</span>
+                                                        <span class="detail-value"><?php echo esc_html($qualification['credits']); ?></span>
+                                                    </div>
+                                                    <div class="button-box-v2 button-accent">
+                                                        <a href="<?php echo esc_url($qualification_link); ?>">View Qualification</a>
+                                                    </div>
+                                                </div>
                                             </div>
-                                            <?php
-                                            $level = $qualification['level'];
-                                            if (!empty($level)) {
-                                                if (strpos($level, 'E') === 0) $level = 'Entry Level ' . str_replace('E', '', $level);
-                                                elseif (strpos($level, 'L') === 0) $level = 'Level ' . str_replace('L', '', $level);
-                                            }
-                                            ?>
-                                            <div class="detail-row">
-                                                <span class="detail-label">Level:</span>
-                                                <span class="detail-value"><?php echo esc_html($level); ?></span>
-                                            </div>
-                                            <div class="detail-row">
-                                                <span class="detail-label">Minimum Credits:</span>
-                                                <span class="detail-value"><?php echo esc_html($qualification['credits']); ?></span>
-                                            </div>
-                                            <div class="button-box-v2 button-accent">
-                                                <a href="<?php echo esc_url($qualification_link); ?>">View Qualification</a>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <?php 
+                                    <?php
                                         }
                                     }
                                     ?>
@@ -184,9 +176,9 @@ $additional_documents = get_post_meta($post_id, 'additional_documents', true);
                                             </li>
                                         </ul>
                                         <?php if (!empty($doc['document_file'])): ?>
-                                        <div class="button-box-v2 button-primary">
-                                            <a href="<?= esc_url(wp_get_attachment_url($doc['document_file'])) ?>" target="_blank">View Document</a>
-                                        </div>
+                                            <div class="button-box-v2 button-primary">
+                                                <a href="<?= esc_url(wp_get_attachment_url($doc['document_file'])) ?>" target="_blank">View Document</a>
+                                            </div>
                                         <?php endif; ?>
                                     <?php endforeach; ?>
                                 </div>
@@ -229,7 +221,7 @@ $additional_documents = get_post_meta($post_id, 'additional_documents', true);
                 <?= do_shortcode('[related_units]') ?>
             </div>
         </section>
-        
+
         <?= do_shortcode('[template template_id=2969]') ?>
     </div>
 </div>

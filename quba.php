@@ -1848,18 +1848,23 @@ class Quba_Controllers
     }
 
     /**
-     * Extracts, formats, and renders specific post meta key information into standardized HTML structures dynamically mapping to UI layouts.
+     * Extracts, formats, and renders specific post meta key information into standardized HTML structures.
      * @param int $post_id Native identifier logic parameter extracting execution values definition schemas.
      * @param string $key Meta key identifier (excluding the preceding underscore).
      * @param string $label Human-readable label for the UI rendering sequence.
-     * @param string $type Formatting type designation ('string' or 'date') mapping to structural output sequences.
-     * @return string Formatted HTML string execution node parameter property instance context array values.
+     * @param string $type Formatting type designation ('string' or 'date').
+     * @param string $fallback Fallback string to display if the meta value is empty (e.g., 'N/A').
+     * @return string Formatted HTML string execution node parameter property instance.
      */
-    public static function render_key_info($post_id, $key, $label, $type = 'string')
+    public static function render_key_info($post_id, $key, $label, $type = 'string', $fallback = '')
     {
         $keyinfo = get_post_meta($post_id, '_' . $key, true);
 
-        if ($key === 'level' && !empty($keyinfo)) {
+        if (empty($keyinfo)) {
+            return $fallback ? "<div class='key-info-item'><strong>{$label}:</strong> " . esc_html($fallback) . "</div>" : '';
+        }
+
+        if ($key === 'level') {
             if (strpos($keyinfo, 'E') === 0) {
                 $keyinfo = 'Entry Level ' . str_replace('E', '', $keyinfo);
             } elseif (strpos($keyinfo, 'L') === 0) {
@@ -1867,11 +1872,11 @@ class Quba_Controllers
             }
         }
 
-        if ($type === 'date' && !empty($keyinfo)) {
+        if ($type === 'date') {
             $keyinfo = date("d F Y", strtotime($keyinfo));
         }
 
-        return $keyinfo ? "<div class='key-info-item'><strong>{$label}:</strong> " . esc_html($keyinfo) . "</div>" : '';
+        return "<div class='key-info-item'><strong>{$label}:</strong> " . esc_html($keyinfo) . "</div>";
     }
 }
 
