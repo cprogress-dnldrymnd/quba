@@ -109,7 +109,7 @@ $chev = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="cu
                                 <?php $qual_type_val = isset($_GET['qualificationType']) ? sanitize_text_field($_GET['qualificationType']) : ''; ?>
                                 <select class="trigger-ajax-change" name="qualificationType" id="type">
                                     <option value="">Qualification Type</option>
-                                    <option value="Access to HE" <?= selected($qual_type_val, 'Access to HE', false) ?>>Access to HE</option>
+                                    <option value="Access to HE" <?= selected($qual_type_val, 'Access to HE', false) ?>>Access to He Diplomas</option>
                                     <option value="End-Point Assessment" <?= selected($qual_type_val, 'End-Point Assessment', false) ?>>Apprenticeship Assessment</option>
                                     <option value="Essential Digital Skills" <?= selected($qual_type_val, 'Essential Digital Skills', false) ?>>Essential Digital Skills</option>
                                     <option value="Experienced Worker Assessment" <?= selected($qual_type_val, 'Experienced Worker Assessment', false) ?>>Experienced Worker Assessment</option>
