@@ -85,7 +85,9 @@ jQuery(document).ready(function ($) {
             urlParams.has('qualificationType') ||
             urlParams.has('qcaCode') ||
             urlParams.has('unitID') ||
-            urlParams.has('unitType');
+            urlParams.has('unitType') ||
+            urlParams.has('tqt');
+
     }
 
     /**
@@ -139,7 +141,7 @@ jQuery(document).ready(function ($) {
         const basePath = '/' + post_type + '/';
         const queryString = urlParams.toString() ? '?' + urlParams.toString() : '';
         const newUrl = basePath + queryString;
-        
+
         window.history.replaceState({}, '', newUrl);
     }
 
@@ -147,7 +149,7 @@ jQuery(document).ready(function ($) {
      * Connects all interaction events (typing, clicking, changing tabs) to the AJAX processor
      */
     function bindSearchTriggers() {
-        
+
         // Handle keyboard typing delays for text inputs
         $('.trigger-type').on('keyup', function () {
             clearTimeout(typingTimer);
@@ -181,7 +183,7 @@ jQuery(document).ready(function ($) {
 
             $('.search-field').addClass('d-none');
             $(searchType).removeClass('d-none');
-            
+
             // CLEAR ALL FORM FIELDS ON TAB SWITCH
             $('.trigger-type').val('');
             $('.trigger-ajax-change').val('');
@@ -229,7 +231,8 @@ jQuery(document).ready(function ($) {
             unitLevel: $('#level').val(),
             qcaSector: $('#qcaSector').val(),
             qualificationType: $('#type').val(),
-            unitType: $('#unitType').val()
+            unitType: $('#unitType').val(),
+            tqt: $('#tqt').val()
         };
 
         var $resultsHolder = $('.results-holder');

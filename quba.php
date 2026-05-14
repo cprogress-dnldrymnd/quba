@@ -3,7 +3,7 @@
 /**
  * Plugin Name: Quba System Integration
  * Description: Integrates QUBA SOAP API, synchronizes units/qualifications via batched processes, and provides custom native templates & meta boxes. Includes persistent background sync logging.
- * Version: 2.8.2
+ * Version: 2.8.3
  * Author: Digitally Disruptive - Donald Raymundo
  * Author URI: https://digitallydisruptive.co.uk/
  * Text Domain: quba-integration
@@ -1682,6 +1682,10 @@ class Quba_Controllers
         }
         if (!empty($_POST['qualificationType'])) {
             $args['meta_query'][] = ['key' => '_type', 'value' => sanitize_text_field($_POST['qualificationType']), 'compare' => 'LIKE'];
+        }
+
+        if (!empty($_POST['tqt'])) {
+            $args['meta_query'][] = ['key' => '_tqt', 'value' => sanitize_text_field($_POST['tqt']), 'compare' => '='];
         }
 
         $query = new WP_Query($args);

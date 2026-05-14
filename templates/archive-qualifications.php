@@ -46,7 +46,7 @@ $chev = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="cu
                                 </svg> </div>
                         </div>
                         <div class="row">
-                            <div class="col-lg-12 search-field search-qual search-units keywords">
+                            <div class="col-lg-6 search-field search-qual search-units keywords">
                                 <input type="text" name="Title" placeholder="Keywords e.g., warehousing" class="trigger-type">
                             </div>
 
@@ -57,6 +57,7 @@ $chev = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="cu
                             <div class="col-lg-6 search-field search-units unit-code d-none">
                                 <input type="text" name="qcaCode" placeholder="Unit Code e.g. Y/505/4889" class="trigger-type">
                             </div>
+
                             <div class="col-lg-6 search-field search-units open-awards-unit-id d-none">
                                 <input type="text" name="unitID" placeholder="Open Awards Unit ID e.g. CBF498" class="trigger-type">
                             </div>
@@ -89,6 +90,7 @@ $chev = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="cu
                                     <?php } ?>
                                 </select>
                             </div>
+
                             <div class="col-lg-6 search-field search-qual search-units sector">
                                 <?php
                                 $sectors = Quba_API::get_qca_sectors();
@@ -103,15 +105,6 @@ $chev = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="cu
                                 </select>
                             </div>
 
-                            <div class="col-lg-6 search-field search-units unit-type d-none">
-                                <?php $unit_type_val = isset($_GET['unitType']) ? sanitize_text_field($_GET['unitType']) : ''; ?>
-                                <select class="trigger-ajax-change" name="unitType" id="unitType">
-                                    <option value="">Unit Type</option>
-                                    <option value="Quality Endorsed" <?= selected($unit_type_val, 'Quality Endorsed', false) ?>>Quality Endorsed Unit</option>
-                                    <option value="Qualification" <?= selected($unit_type_val, 'Qualification', false) ?>>Regulated Qualification Unit</option>
-                                    <option value="Access" <?= selected($unit_type_val, 'Access', false) ?>>Access to HE Unit</option>
-                                </select>
-                            </div>
                             <div class="col-lg-6 search-field search-qual type">
                                 <?php $qual_type_val = isset($_GET['qualificationType']) ? sanitize_text_field($_GET['qualificationType']) : ''; ?>
                                 <select class="trigger-ajax-change" name="qualificationType" id="type">
@@ -130,6 +123,31 @@ $chev = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="cu
                                 </select>
                             </div>
 
+                            <div class="col-lg-6 search-field search-units unit-type d-none">
+                                <?php $unit_type_val = isset($_GET['unitType']) ? sanitize_text_field($_GET['unitType']) : ''; ?>
+                                <select class="trigger-ajax-change" name="unitType" id="unitType">
+                                    <option value="">Unit Type</option>
+                                    <option value="Quality Endorsed" <?= selected($unit_type_val, 'Quality Endorsed', false) ?>>Quality Endorsed Unit</option>
+                                    <option value="Qualification" <?= selected($unit_type_val, 'Qualification', false) ?>>Regulated Qualification Unit</option>
+                                    <option value="Access" <?= selected($unit_type_val, 'Access', false) ?>>Access to HE Unit</option>
+                                </select>
+                            </div>
+
+                            <div class="col-lg-6 search-field search-qual tqt">
+                                <?php
+                                $raw_tqts = array_filter(get_unique_meta_values('_tqt'));
+                                $tqt_val = isset($_GET['tqt']) ? sanitize_text_field($_GET['tqt']) : '';
+
+                                // Natural numeric sort enforces sequential integer placement (e.g. 90, 100, 120) instead of raw alphabetical ordering
+                                sort($raw_tqts, SORT_NATURAL | SORT_FLAG_CASE);
+                                ?>
+                                <select class="trigger-ajax-change" name="tqt" id="tqt">
+                                    <option value="">Total Qualification Time (TQT)</option>
+                                    <?php foreach ($raw_tqts as $tqt) { ?>
+                                        <option value="<?= esc_attr($tqt) ?>" <?= selected($tqt, $tqt_val, false) ?>><?= esc_html($tqt) ?></option>
+                                    <?php } ?>
+                                </select>
+                            </div>
                         </div>
                     </div>
                 </div>
