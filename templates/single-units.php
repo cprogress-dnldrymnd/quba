@@ -31,6 +31,9 @@ $additional_documents = get_post_meta($post_id, 'additional_documents', true);
             echo '<p>Unit Document Local PDF: ' . ($unitPdf ? 'Available' : 'Not Available') . '</p>';
             echo '<p>Related Qualifications Cached Count: ' . (is_array($unitQualification) ? count($unitQualification) : 0) . '</p>';
             echo '</div>';
+              echo '<pre>';
+            var_dump(get_post_meta($post_id));
+            echo '</pre>';
         ?>
 
         <?php
