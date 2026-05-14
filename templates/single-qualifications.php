@@ -30,6 +30,9 @@ $additional_documents = get_post_meta($post_id, 'additional_documents', true);
             echo '<p>Purpose Statement Local PDF: ' . ($pdf_url ? 'Available' : 'Not Available') . '</p>';
             echo '<p>Qualification Guide Local PDF: ' . ($baseURL ? 'Available' : 'Not Available') . '</p>';
             echo '</div>';
+            echo '<pre>';
+            var_dump(get_post_meta($post_id));
+            echo '</pre>';
         }
         ?>
 
