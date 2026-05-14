@@ -1064,6 +1064,7 @@ class Quba_Admin_Meta
         $api_fields = $post->post_type === 'qualifications' ? [
             '_id' => 'Qualification ID',
             '_qualificationreferencenumber' => 'Qualification Code',
+            '_alternativequalificationtitle' => 'Alternative Title',
             '_type' => 'Type',
             '_classification1' => 'Sector',
             '_classification2' => 'Risk Rating',
