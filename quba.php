@@ -3,7 +3,7 @@
 /**
  * Plugin Name: Quba System Integration
  * Description: Integrates QUBA SOAP API, synchronizes units/qualifications via batched processes, and provides custom native templates & meta boxes. Includes persistent background sync logging.
- * Version: 2.8.3
+ * Version: 2.8.2
  * Author: Digitally Disruptive - Donald Raymundo
  * Author URI: https://digitallydisruptive.co.uk/
  * Text Domain: quba-integration
@@ -303,7 +303,7 @@ class Quba_Cron_Sync
      * @param array $specific_ids Array of numerical target IDs for precise localized fetching.
      * @return int|bool Valid count integer of queue size or false on failure.
      */
-    public static function build_sync_queue($sync_type = 'both', $specific_ids = [])
+    public static function build_sync_queue($sync_type = 'both', $specific_ids = [], $enable_specific_id_fallback = false)
     {
         $client = Quba_API::get_client();
         if (!$client) {
@@ -315,7 +315,7 @@ class Quba_Cron_Sync
         $processed_quals = [];
         $processed_units = [];
 
-        self::log_action("INFO: Rebuilding Sync Queue (Type: {$sync_type}, Specific IDs: " . implode(',', $specific_ids) . ")");
+        self::log_action("INFO: Rebuilding Sync Queue (Type: {$sync_type}, Specific IDs: " . implode(',', $specific_ids) . ", Specific ID Fallback: " . ($enable_specific_id_fallback ? 'enabled' : 'disabled') . ")");
 
         if (!is_array($specific_ids)) {
             $specific_ids = (int)$specific_ids > 0 ? [(int)$specific_ids] : [];
@@ -361,10 +361,9 @@ class Quba_Cron_Sync
                         'centreID'            => 0,  // REQUIRED: Int32 must be 0,
                     ];
                     $res = $client->QUBA_QualificationSearch($req);
-
-
-
                     $xmlString = $res->QUBA_QualificationSearchResult->any ?? '';
+                    $quals = [];
+                    $fallback_attempted = false;
 
                     $debug_data = [
                         'method' => 'QUBA_QualificationSearch',
@@ -374,31 +373,58 @@ class Quba_Cron_Sync
                     if ($xmlString) {
                         libxml_use_internal_errors(true);
                         $xml = new SimpleXMLElement(Quba_API::wrap_soap_envelope('QUBA_QualificationSearch', $xmlString));
-                        $quals = $xml->xpath('//QubaQualification');
-                        if ($quals) {
-                            foreach ($quals as $qual) {
-                                $data = [];
-                                foreach ($qual->children() as $child) {
-                                    if ($child->getName() != 'Classifications') {
-                                        $data[$child->getName()] = trim((string) $child);
-                                    }
-                                }
-                                if (isset($qual->Classifications->Classification1)) {
-                                    $data['Classification1'] = trim((string) $qual->Classifications->Classification1);
-                                }
-                                if (isset($qual->Classifications->Classification2)) {
-                                    $data['Classification2'] = trim((string) $qual->Classifications->Classification2);
-                                }
+                        $parsed_quals = $xml->xpath('//QubaQualification');
+                        if ($parsed_quals) {
+                            $quals = $parsed_quals;
+                        }
+                    }
 
-                                $id = $data['ID'] ?? '';
-                                if ($id && !isset($processed_quals[$id])) {
-                                    $processed_quals[$id] = true;
-                                    $queue[] = ['type' => 'qualifications', 'data' => $data];
-                                }
+                    $is_specific_qualification_lookup = !empty($specific_ids) && !empty($sq['qualificationID']);
+                    if ($enable_specific_id_fallback && $is_specific_qualification_lookup && empty($quals)) {
+                        $fallback_attempted = true;
+                        $fallback_req = $req;
+                        $fallback_req['includeHub'] = true;
 
-                                $debug_data['response_status'] = json_encode($data);
+                        self::log_action("INFO: Specific qualification ID {$sq['qualificationID']} returned no results with includeHub=false. Retrying with includeHub=true.");
+                        $fallback_res = $client->QUBA_QualificationSearch($fallback_req);
+                        $fallback_xml_string = $fallback_res->QUBA_QualificationSearchResult->any ?? '';
+
+                        if ($fallback_xml_string) {
+                            libxml_use_internal_errors(true);
+                            $fallback_xml = new SimpleXMLElement(Quba_API::wrap_soap_envelope('QUBA_QualificationSearch', $fallback_xml_string));
+                            $fallback_quals = $fallback_xml->xpath('//QubaQualification');
+                            if ($fallback_quals) {
+                                $quals = $fallback_quals;
+                                $debug_data['fallback_parameters'] = $fallback_req;
                             }
                         }
+                    }
+
+                    if ($quals) {
+                        foreach ($quals as $qual) {
+                            $data = [];
+                            foreach ($qual->children() as $child) {
+                                if ($child->getName() != 'Classifications') {
+                                    $data[$child->getName()] = trim((string) $child);
+                                }
+                            }
+                            if (isset($qual->Classifications->Classification1)) {
+                                $data['Classification1'] = trim((string) $qual->Classifications->Classification1);
+                            }
+                            if (isset($qual->Classifications->Classification2)) {
+                                $data['Classification2'] = trim((string) $qual->Classifications->Classification2);
+                            }
+
+                            $id = $data['ID'] ?? '';
+                            if ($id && !isset($processed_quals[$id])) {
+                                $processed_quals[$id] = true;
+                                $queue[] = ['type' => 'qualifications', 'data' => $data];
+                            }
+
+                            $debug_data['response_status'] = json_encode($data);
+                        }
+                    } else {
+                        $debug_data['response_status'] = $fallback_attempted ? 'No qualification rows returned (including includeHub=true fallback).' : 'No qualification rows returned.';
                     }
                 } catch (Exception $e) {
                     self::log_action("ERROR: Qualification Queue Failure - " . $e->getMessage());
@@ -868,6 +894,10 @@ class Quba_Admin
                     <label style="display: block; font-size: 14px; margin-bottom: 10px;"><strong>2. Optional: Sync Specific Target ID(s)</strong></label>
                     <input type="text" id="quba_sync_specific_id" placeholder="e.g. 1234, 5678, 9101" style="width: 100%; max-width: 300px;">
                     <p class="description" style="font-size: 12px; color: #666; margin-top: 5px;">Leave blank to run a full synchronization. If you enter comma-separated IDs here, the tool will instantly bypass the extraction loops and sync exclusively those items.</p>
+                    <label style="display: block; margin-top: 10px;">
+                        <input type="checkbox" id="quba_specific_id_fallback" value="1">
+                        If specific ID returns no rows, retry once with fallback lookup
+                    </label>
                 </div>
 
                 <button id="quba-start-sync" class="button button-primary button-large">Start Manual Sync</button>
@@ -948,6 +978,7 @@ class Quba_Admin
         if (!current_user_can('manage_options')) wp_send_json_error('Unauthorized');
 
         $sync_type = isset($_POST['sync_type']) ? sanitize_text_field($_POST['sync_type']) : 'both';
+        $enable_specific_id_fallback = !empty($_POST['enable_specific_id_fallback']) && $_POST['enable_specific_id_fallback'] === '1';
 
         $specific_ids = [];
         if (!empty($_POST['specific_id'])) {
@@ -961,7 +992,7 @@ class Quba_Admin
         }
 
         // Change this line from $total to $result:
-        $result = Quba_Cron_Sync::build_sync_queue($sync_type, $specific_ids);
+        $result = Quba_Cron_Sync::build_sync_queue($sync_type, $specific_ids, $enable_specific_id_fallback);
 
         if ($result === false) wp_send_json_error('Failed to connect to QUBA API.');
 
@@ -1589,8 +1620,8 @@ class Quba_Controllers
             is_post_type_archive('qualifications') || is_post_type_archive('units') ||
             is_singular('qualifications') || is_singular('units') || is_tax('qualifications_cat')
         ) {
-            wp_enqueue_style('quba-main-css', plugin_dir_url(__FILE__) . 'assets/css/main.css', [], '2.8.3', 'all');
-            wp_enqueue_script('quba-main-js', plugin_dir_url(__FILE__) . 'assets/js/main.js', ['jquery'], '2.8.3', true);
+            wp_enqueue_style('quba-main-css', plugin_dir_url(__FILE__) . 'assets/css/main.css', [], '2.8.2', 'all');
+            wp_enqueue_script('quba-main-js', plugin_dir_url(__FILE__) . 'assets/js/main.js', ['jquery'], '2.8.2', true);
             wp_localize_script('quba-main-js', 'qubaAjaxObj', [
                 'ajaxUrl' => admin_url('admin-ajax.php'),
                 'nonce'   => wp_create_nonce('quba_ajax_nonce')
@@ -1641,13 +1672,33 @@ class Quba_Controllers
             'meta_query'     => ['relation' => 'AND']
         ];
 
-        // Show qualifications only when Regulation Start Date has been reached
+        // Show qualifications only when Certification Start Date has been reached
         $today = current_time('Y-m-d');
         $args['meta_query'][] = [
             'key'     => '_regulationstartdate',
             'value'   => $today,
             'compare' => '<=',
-            'type'    => 'CHAR'
+            'type'    => 'DATE'
+        ];
+
+        // Remove qualifications from website only after Certification End Date has passed
+        $args['meta_query'][] = [
+            'relation' => 'OR',
+            [
+                'key'     => '_regulationenddate',
+                'value'   => $today,
+                'compare' => '>=',
+                'type'    => 'DATE'
+            ],
+            [
+                'key'     => '_regulationenddate',
+                'compare' => 'NOT EXISTS'
+            ],
+            [
+                'key'     => '_regulationenddate',
+                'value'   => '',
+                'compare' => '='
+            ]
         ];
 
         if (!empty($_POST['qualificationTitle']) && $_POST['qualificationTitle'] !== 'e') {
@@ -1683,7 +1734,6 @@ class Quba_Controllers
         if (!empty($_POST['qualificationType'])) {
             $args['meta_query'][] = ['key' => '_type', 'value' => sanitize_text_field($_POST['qualificationType']), 'compare' => 'LIKE'];
         }
-
         if (!empty($_POST['tqt'])) {
             $args['meta_query'][] = ['key' => '_tqt', 'value' => sanitize_text_field($_POST['tqt']), 'compare' => '='];
         }
@@ -1840,11 +1890,38 @@ class Quba_Controllers
     {
         ob_start();
         $level = get_post_meta(get_the_ID(), '_level', true);
+        $today = current_time('Y-m-d');
         $args = [
             'post_type'   => 'qualifications',
             'numberposts' => 3,
             'orderby'     => 'rand',
             'meta_query'  => ['relation' => 'AND']
+        ];
+
+        // Match archive visibility rules: started certifications and non-expired certification end date
+        $args['meta_query'][] = [
+            'key'     => '_regulationstartdate',
+            'value'   => $today,
+            'compare' => '<=',
+            'type'    => 'DATE'
+        ];
+        $args['meta_query'][] = [
+            'relation' => 'OR',
+            [
+                'key'     => '_regulationenddate',
+                'value'   => $today,
+                'compare' => '>=',
+                'type'    => 'DATE'
+            ],
+            [
+                'key'     => '_regulationenddate',
+                'compare' => 'NOT EXISTS'
+            ],
+            [
+                'key'     => '_regulationenddate',
+                'value'   => '',
+                'compare' => '='
+            ]
         ];
 
         if ($level) {
