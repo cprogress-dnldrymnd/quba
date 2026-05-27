@@ -605,6 +605,31 @@ class Quba_Cron_Sync
         return false;
     }
 
+   /**
+     * Appends a persistent local sync history record for individual posts.
+     * @param int $post_id Target WP Post ID.
+     * @param string $message Contextual modification description.
+     */
+    public static function log_post_history($post_id, $message)
+    {
+        $history = get_post_meta($post_id, '_quba_sync_history', true);
+        if (!is_array($history)) {
+            $history = [];
+        }
+
+        $history[] = [
+            'date' => current_time('mysql'),
+            'message' => $message
+        ];
+
+        // Cap history to 100 entries to prevent meta bloat
+        if (count($history) > 100) {
+            $history = array_slice($history, -100);
+        }
+
+        update_post_meta($post_id, '_quba_sync_history', $history);
+    }
+
     /**
      * Coordinates specific logical assignments converting API payload into local custom Post instances.
      * @param SoapClient $client Passed Active Resource.
@@ -619,16 +644,40 @@ class Quba_Cron_Sync
         try {
             $res_doc = $client->QUBA_GetQualificationDocuments($req_doc);
             $any_data = $res_doc->QUBA_GetQualificationDocumentsResult->any ?? '';
-            $url = self::save_pdf_stream($any_data, 'qualifications/purpose-statement', 'PurposeStatement_' . $data['ID']);
-            if ($url) update_post_meta($post_id, '_purpose_statement_url', $url);
+            
+            if ($any_data) {
+                $new_hash = md5($any_data);
+                $old_hash = get_post_meta($post_id, '_purpose_statement_hash', true);
+                
+                if ($new_hash !== $old_hash) {
+                    $url = self::save_pdf_stream($any_data, 'qualifications/purpose-statement', 'PurposeStatement_' . $data['ID']);
+                    if ($url) {
+                        update_post_meta($post_id, '_purpose_statement_url', $url);
+                        update_post_meta($post_id, '_purpose_statement_hash', $new_hash);
+                        self::log_post_history($post_id, 'Document Updated: Purpose Statement PDF');
+                    }
+                }
+            }
         } catch (Exception $e) {
         }
 
         try {
             $res_guide = $client->QUBA_GetQualificationGuide($req_doc);
             $pdf_data = $res_guide->QUBA_GetQualificationGuideResult ?? '';
-            $url = self::save_pdf_stream($pdf_data, 'qualifications/qualification-guide', 'QualificationGuide_' . $data['ID']);
-            if ($url) update_post_meta($post_id, '_qualification_guide_url', $url);
+            
+            if ($pdf_data) {
+                $new_hash = md5($pdf_data);
+                $old_hash = get_post_meta($post_id, '_qualification_guide_hash', true);
+                
+                if ($new_hash !== $old_hash) {
+                    $url = self::save_pdf_stream($pdf_data, 'qualifications/qualification-guide', 'QualificationGuide_' . $data['ID']);
+                    if ($url) {
+                        update_post_meta($post_id, '_qualification_guide_url', $url);
+                        update_post_meta($post_id, '_qualification_guide_hash', $new_hash);
+                        self::log_post_history($post_id, 'Document Updated: Qualification Guide PDF');
+                    }
+                }
+            }
         } catch (Exception $e) {
         }
     }
@@ -656,8 +705,17 @@ class Quba_Cron_Sync
         }
 
         if ($pdfContent) {
-            $url = self::store_document($pdfContent, 'units/unit-content', 'UnitContent_' . $numeric_id);
-            if ($url) update_post_meta($post_id, '_unit_content_url', $url);
+            $new_hash = md5($pdfContent);
+            $old_hash = get_post_meta($post_id, '_unit_content_hash', true);
+            
+            if ($new_hash !== $old_hash) {
+                $url = self::store_document($pdfContent, 'units/unit-content', 'UnitContent_' . $numeric_id);
+                if ($url) {
+                    update_post_meta($post_id, '_unit_content_url', $url);
+                    update_post_meta($post_id, '_unit_content_hash', $new_hash);
+                    self::log_post_history($post_id, 'Document Updated: Unit Content PDF');
+                }
+            }
         }
 
         try {
@@ -738,7 +796,6 @@ class Quba_Cron_Sync
             'post_content' => $post_content
         ];
 
-
         if ($check_id) {
             $post_data['ID'] = $check_id;
             wp_update_post($post_data);
@@ -747,17 +804,30 @@ class Quba_Cron_Sync
         } else {
             $post_id = wp_insert_post($post_data);
             self::log_action("CREATED {$post_type}: '{$post_title}' (WP_ID: {$post_id} | API_ID: {$item_id})");
+            self::log_post_history($post_id, 'Record created via QUBA API sync sequence.');
         }
+
+        $is_update = (bool)$check_id;
+        $changed_fields = [];
 
         # MANUAL META UPDATE (FIX)
         foreach ($data as $key => $val) {
             $meta_key = '_' . strtolower($key);
+            
+            $old_val = get_post_meta($post_id, $meta_key, true);
+            $new_val = ($val === '' || is_null($val)) ? '' : $val;
 
-            if ($val === '' || is_null($val)) {
-                update_post_meta($post_id, $meta_key, '');
-            } else {
-                update_post_meta($post_id, $meta_key, $val); //update new value
+            if ($is_update && (string)$old_val !== (string)$new_val) {
+                if ($old_val !== '') { 
+                    $changed_fields[] = $key;
+                }
             }
+            
+            update_post_meta($post_id, $meta_key, $new_val);
+        }
+
+        if (!empty($changed_fields)) {
+            self::log_post_history($post_id, 'Data fields updated: ' . implode(', ', $changed_fields));
         }
 
         # Ensure ID fields always correct
@@ -777,14 +847,12 @@ class Quba_Cron_Sync
         $existing_meta = get_post_meta($post_id);
 
         foreach ($existing_meta as $meta_key => $meta_values) {
-
             // Only target your custom meta (skip WP/system fields)
             if (
                 strpos($meta_key, '_') === 0 &&
                 !in_array($meta_key, ['_id', '_id_alpha']) &&
                 !str_starts_with($meta_key, '_wp_')
             ) {
-
                 // If meta NOT in API → clear it
                 if (!in_array($meta_key, $api_keys)) {
                     update_post_meta($post_id, $meta_key, '');
@@ -792,8 +860,6 @@ class Quba_Cron_Sync
                 }
             }
         }
-
-
 
         return $post_id;
     }
@@ -1053,7 +1119,7 @@ class Quba_Admin_Meta
         add_meta_box('quba_meta_data', 'QUBA Data & Documents', [__CLASS__, 'render_meta_box'], ['qualifications', 'units'], 'normal', 'high');
     }
 
-    /**
+   /**
      * Extracts values locally building structural layout parameters defining context array definitions executing variable schemas blocks mappings properties.
      * @param WP_Post $post Internal variable context targeting execution object block definition schemas defining.
      */
@@ -1106,6 +1172,7 @@ class Quba_Admin_Meta
             <ul class="quba-tab-nav">
                 <li class="active"><a href="#quba-tab-api">API Sync Data (Read-Only)</a></li>
                 <li><a href="#quba-tab-docs">Additional Documents</a></li>
+                <li><a href="#quba-tab-history">Sync History</a></li>
             </ul>
 
             <div id="quba-tab-api" class="quba-tab-content active">
@@ -1164,6 +1231,26 @@ class Quba_Admin_Meta
                     ?>
                 </div>
                 <button type="button" id="quba-add-row" class="button button-primary" style="margin-top: 15px;">Add Document</button>
+            </div>
+
+            <div id="quba-tab-history" class="quba-tab-content">
+                <p><em>Persistent timeline of API updates and document modifications strictly for this entity.</em></p>
+                <div class="quba-history-log" style="max-height: 400px; overflow-y: auto; background: #f0f0f1; border: 1px solid #ccd0d4; padding: 10px;">
+                    <?php
+                    $history = get_post_meta($post->ID, '_quba_sync_history', true);
+                    if (!empty($history) && is_array($history)) {
+                        $history = array_reverse($history); // Latest first
+                        foreach ($history as $entry) {
+                            echo '<div style="margin-bottom: 8px; border-bottom: 1px solid #ddd; padding-bottom: 8px; font-size: 13px;">';
+                            echo '<strong>' . esc_html(date('Y-m-d H:i:s', strtotime($entry['date']))) . ':</strong> ';
+                            echo esc_html($entry['message']);
+                            echo '</div>';
+                        }
+                    } else {
+                        echo '<div style="font-size: 13px;">No update history recorded yet. History will populate dynamically upon data or document mutation during the next sync payload.</div>';
+                    }
+                    ?>
+                </div>
             </div>
         </div>
     <?php
