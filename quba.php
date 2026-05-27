@@ -315,10 +315,10 @@ class Quba_Cron_Sync
         if (empty($to)) return;
 
         $site_name = wp_specialchars_decode(get_option('blogname'), ENT_QUOTES);
-        
+
         // Dynamically ascertain if a human clicked the button or if the server executed it
         $sync_type = wp_doing_ajax() ? 'Manual UI' : 'Automated Cron';
-        
+
         $subject = "[{$site_name}] QUBA API {$sync_type} Sync: {$phase}";
         $message = "The {$sync_type} QUBA API synchronization sequence has {$phase}.\n\n";
 
@@ -327,7 +327,7 @@ class Quba_Cron_Sync
         } else {
             $message .= "The sync queue has been successfully emptied. All targeted qualifications and units have been fully synchronized with the QUBA API.\n\n";
         }
-        
+
         $message .= "Server Time: " . current_time('mysql') . "\n";
 
         wp_mail($to, $subject, $message);
@@ -537,15 +537,12 @@ class Quba_Cron_Sync
                 }
             }
         }
-
         $total_items = count($queue);
         self::log_action("SUCCESS: Queue rebuilt. Total Items Pending: " . $total_items);
         update_option('quba_sync_queue', $queue, false);
 
-        // Broadcast the 'Started' payload explicitly isolated to automated chron sequences
-        if (!wp_doing_ajax()) {
-            self::dispatch_sync_notification('Started', $total_items);
-        }
+        // Broadcast the 'Started' payload dynamically for both contexts
+        self::dispatch_sync_notification('Started', $total_items);
 
         return ['total' => $total_items, 'debug' => $debug_data ?? null];
     }
@@ -594,8 +591,8 @@ class Quba_Cron_Sync
 
         self::log_action("SUCCESS: Batch of {$actual_batch_size} items completed in {$time_string}.");
 
-        // Execute conditional broadcast payload when the final block completes processing
-        if ($remaining === 0 && $actual_batch_size > 0 && !wp_doing_ajax()) {
+        // Execute conditional broadcast payload when the final block completes processing for both contexts
+        if ($remaining === 0 && $actual_batch_size > 0) {
             self::dispatch_sync_notification('Finished', 0);
         }
 
