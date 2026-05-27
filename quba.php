@@ -303,33 +303,106 @@ class Quba_Cron_Sync
         file_put_contents($log_file, $formatted_message, FILE_APPEND);
     }
 
-    /**
-     * Dispatches an email notification to the configured administrator regarding automated sync events.
-     * Evaluates execution context to guarantee emails are only sent during headless WP-Cron background sequences.
+   /**
+     * Dispatches an email notification to the configured administrator regarding sync events.
+     * Evaluates execution context to dynamically label the notification as Manual or Automated.
      * * @param string $phase Designates the lifecycle phase ('Started' or 'Finished').
      * @param int $item_count The total number of items identified or processed in the queue.
      */
     public static function dispatch_sync_notification($phase, $item_count = 0)
     {
-        // Abort if this is a manual execution via the WordPress Admin interface
-        if (wp_doing_ajax()) return;
-
         $to = get_option('quba_notification_email', '');
         if (empty($to)) return;
 
         $site_name = wp_specialchars_decode(get_option('blogname'), ENT_QUOTES);
-        $subject = "[{$site_name}] QUBA API Sync: {$phase}";
-        $message = "The automated QUBA API synchronization sequence has {$phase}.\n\n";
+        
+        // Dynamically ascertain if a human clicked the button or if the server executed it
+        $sync_type = wp_doing_ajax() ? 'Manual UI' : 'Automated Cron';
+        
+        $subject = "[{$site_name}] QUBA API {$sync_type} Sync: {$phase}";
+        $message = "The {$sync_type} QUBA API synchronization sequence has {$phase}.\n\n";
 
         if ($phase === 'Started') {
-            $message .= "The daily sync queue has been successfully constructed and contains {$item_count} pending items. The background batch processor (process_batch_cron) will now commence execution every 3 minutes until complete.\n\n";
+            $message .= "The sync queue has been successfully constructed and contains {$item_count} pending items. The batch processor will now commence execution until complete.\n\n";
         } else {
-            $message .= "The background queue has been successfully emptied. All qualifications and units have been fully synchronized with the QUBA API.\n\n";
+            $message .= "The sync queue has been successfully emptied. All targeted qualifications and units have been fully synchronized with the QUBA API.\n\n";
         }
-
+        
         $message .= "Server Time: " . current_time('mysql') . "\n";
 
         wp_mail($to, $subject, $message);
+    }
+
+    /**
+     * Traverses the SOAP API matrix iteratively compiling all remote items into a transient queue buffer.
+     * @param string $sync_type Data matrix targeted for aggregation ('both', 'qualifications', 'units').
+     * @param array $specific_ids Array of numerical target IDs for precise localized fetching.
+     * @return int|bool Valid count integer of queue size or false on failure.
+     */
+    public static function build_sync_queue($sync_type = 'both', $specific_ids = [], $enable_specific_id_fallback = false)
+    {
+        // ... [Retain your existing API extraction logic here up to the queue return sequence] ...
+
+        $total_items = count($queue);
+        self::log_action("SUCCESS: Queue rebuilt. Total Items Pending: " . $total_items);
+        update_option('quba_sync_queue', $queue, false);
+        
+        // Broadcast the 'Started' payload dynamically for both contexts
+        self::dispatch_sync_notification('Started', $total_items);
+
+        return ['total' => $total_items, 'debug' => $debug_data ?? null];
+    }
+
+    /**
+     * Consumes and processes a chunk of items strictly sourced from the transient queue block.
+     * @param int $batch_size Maximum execution ceiling for array chunk processing.
+     * @return int Size remaining sequentially in the processing queue.
+     */
+    public static function process_batch($batch_size = 5)
+    {
+        $start_time = microtime(true);
+
+        $queue = get_option('quba_sync_queue', []);
+        $total_in_queue = count($queue);
+
+        if (empty($queue)) {
+            return 0;
+        }
+
+        $client = Quba_API::get_client();
+        if (!$client) {
+            self::log_action("ERROR: Batch Processing failed. Could not instantiate SOAP Client.");
+            return $total_in_queue;
+        }
+
+        $actual_batch_size = min($batch_size, $total_in_queue);
+        self::log_action("INFO: Processing new batch of {$actual_batch_size} items. ({$total_in_queue} items remaining in queue).");
+
+        $batch = array_splice($queue, 0, $batch_size);
+
+        foreach ($batch as $item) {
+            if ($item['type'] === 'qualifications') {
+                self::process_single_qualification($client, $item['data']);
+            } else {
+                self::process_single_unit($client, $item['data']);
+            }
+        }
+
+        update_option('quba_sync_queue', $queue, false);
+        $remaining = count($queue);
+
+        $end_time = microtime(true);
+        $duration = round($end_time - $start_time, 2);
+        $time_string = floor($duration / 60) > 0 ? floor($duration / 60) . "m " . ($duration % 60) . "s" : "{$duration}s";
+
+        self::log_action("SUCCESS: Batch of {$actual_batch_size} items completed in {$time_string}.");
+
+        // Execute conditional broadcast payload when the final block completes processing for both contexts
+        if ($remaining === 0 && $actual_batch_size > 0) {
+            self::dispatch_sync_notification('Finished', 0);
+        }
+
+        return $remaining;
     }
 
     /**
@@ -536,19 +609,17 @@ class Quba_Cron_Sync
             }
         }
 
-        $total_items = count($queue);
+       $total_items = count($queue);
         self::log_action("SUCCESS: Queue rebuilt. Total Items Pending: " . $total_items);
         update_option('quba_sync_queue', $queue, false);
-
-        // Broadcast the 'Started' payload explicitly isolated to automated chron sequences
-        if (!wp_doing_ajax()) {
-            self::dispatch_sync_notification('Started', $total_items);
-        }
+        
+        // Broadcast the 'Started' payload dynamically for both contexts
+        self::dispatch_sync_notification('Started', $total_items);
 
         return ['total' => $total_items, 'debug' => $debug_data ?? null];
     }
 
-    /**
+   /**
      * Consumes and processes a chunk of items strictly sourced from the transient queue block.
      * @param int $batch_size Maximum execution ceiling for array chunk processing.
      * @return int Size remaining sequentially in the processing queue.
@@ -592,8 +663,8 @@ class Quba_Cron_Sync
 
         self::log_action("SUCCESS: Batch of {$actual_batch_size} items completed in {$time_string}.");
 
-        // Execute conditional broadcast payload when the final block completes processing
-        if ($remaining === 0 && $actual_batch_size > 0 && !wp_doing_ajax()) {
+        // Execute conditional broadcast payload when the final block completes processing for both contexts
+        if ($remaining === 0 && $actual_batch_size > 0) {
             self::dispatch_sync_notification('Finished', 0);
         }
 
