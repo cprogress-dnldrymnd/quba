@@ -949,21 +949,9 @@ class Quba_Admin
         add_action('wp_ajax_quba_init_sync', [__CLASS__, 'ajax_init_sync']);
         add_action('wp_ajax_quba_process_batch', [__CLASS__, 'ajax_process_batch']);
         add_action('wp_ajax_quba_clear_logs', [__CLASS__, 'ajax_clear_logs']);
-        add_action('wp_ajax_quba_save_settings', [__CLASS__, 'ajax_save_settings']); // ADDED: Intercepts notification updates
+        add_action('wp_ajax_quba_save_settings', [__CLASS__, 'ajax_save_settings']);
     }
-    /**
-     * Parses and securely commits configured option parameters directly to the database layer context block.
-     */
-    public static function ajax_save_settings()
-    {
-        check_ajax_referer('quba_admin_nonce', 'nonce');
-        if (!current_user_can('manage_options')) wp_send_json_error('Unauthorized');
 
-        $email = isset($_POST['notification_email']) ? sanitize_email($_POST['notification_email']) : '';
-        update_option('quba_notification_email', $email);
-
-        wp_send_json_success();
-    }
     /**
      * Constructs localized layout logic mapping within default options menu parameter scope blocks dynamically generating layout matrices.
      */
@@ -994,13 +982,32 @@ class Quba_Admin
     }
 
     /**
+     * Parses and securely commits configured option parameters directly to the database layer context block.
+     * Evaluates permission boundaries to ensure strict administrative origin payloads.
+     */
+    public static function ajax_save_settings()
+    {
+        check_ajax_referer('quba_admin_nonce', 'nonce');
+        if (!current_user_can('manage_options')) wp_send_json_error('Unauthorized');
+
+        $email = isset($_POST['notification_email']) ? sanitize_email($_POST['notification_email']) : '';
+        update_option('quba_notification_email', $email);
+        
+        wp_send_json_success();
+    }
+
+    /**
      * Manages HTML view layout structures injecting variables parameters rendering visual interactive interface constructs.
+     * Integrates manual sync execution handlers, logging visualization matrices, and CRON notification routing interfaces.
      */
     public static function render_admin_page()
     {
         $upload_dir = wp_upload_dir();
         $log_file = $upload_dir['basedir'] . '/quba-logs/sync.log';
         $log_content = file_exists($log_file) ? esc_html(file_get_contents($log_file)) : 'No logs generated yet. Run a sync to begin monitoring.';
+        
+        // Fetch current recipient target dynamically
+        $current_email = get_option('quba_notification_email', get_option('admin_email'));
 
 ?>
         <div class="wrap">
@@ -1046,8 +1053,40 @@ class Quba_Admin
             </div>
 
             <div style="background: #fff; padding: 20px; border: 1px solid #ccd0d4; max-width: 600px; margin-top: 20px; display: inline-block; vertical-align: top; margin-left: 20px;">
+                <div style="margin-bottom: 15px;">
+                    <h2 style="margin-top:0; font-size: 16px;">Cron Notification Settings</h2>
+                    <p class="description" style="margin-top: 0;">Specify an email address below to receive Start and Finish reports when automated background synchronization sequences execute (e.g. daily updates).</p>
+                </div>
+                
+                <div style="margin-bottom: 15px;">
+                    <label for="quba_notification_email" style="display: block; font-size: 14px; margin-bottom: 5px;"><strong>Recipient Email Address:</strong></label>
+                    <input type="email" id="quba_notification_email" value="<?= esc_attr($current_email) ?>" placeholder="e.g. admin@domain.com" style="width: 100%; max-width: 400px;">
+                </div>
+                
+                <button id="quba-save-settings" class="button button-secondary">Save Settings</button>
+                <span id="quba-settings-status" style="margin-left: 10px; font-weight: 500; color: #00a32a; display: none;">Saved!</span>
 
-
+                <script>
+                    jQuery(document).ready(function($) {
+                        $('#quba-save-settings').on('click', function(e) {
+                            e.preventDefault();
+                            var $btn = $(this);
+                            var $status = $('#quba-settings-status');
+                            $btn.prop('disabled', true).text('Saving...');
+                            
+                            $.post(ajaxurl, {
+                                action: 'quba_save_settings',
+                                nonce: qubaAdminAjax.nonce,
+                                notification_email: $('#quba_notification_email').val()
+                            }, function(res) {
+                                $btn.prop('disabled', false).text('Save Settings');
+                                if(res.success) {
+                                    $status.fadeIn().delay(2000).fadeOut();
+                                }
+                            });
+                        });
+                    });
+                </script>
             </div>
 
             <div style="background: #fff; padding: 20px; border: 1px solid #ccd0d4; max-width: 600px; margin-top: 20px; display: inline-block; vertical-align: top; margin-left: 20px;">
@@ -1117,7 +1156,6 @@ class Quba_Admin
             }
         }
 
-        // Change this line from $total to $result:
         $result = Quba_Cron_Sync::build_sync_queue($sync_type, $specific_ids, $enable_specific_id_fallback);
 
         if ($result === false) wp_send_json_error('Failed to connect to QUBA API.');
