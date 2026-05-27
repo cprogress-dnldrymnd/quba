@@ -932,7 +932,214 @@ class Quba_Cron_Sync
     }
 }
 
+/**
+ * Class Quba_Admin
+ * Manages the backend UI for manual synchronization.
+ */
+class Quba_Admin
+{
+    /**
+     * Enqueues actions mapped to administrative backend execution schemas contextually limiting footprint properties.
+     */
+    public static function init()
+    {
+        add_action('admin_menu', [__CLASS__, 'register_menu']);
+        add_action('admin_enqueue_scripts', [__CLASS__, 'enqueue_admin_scripts']);
 
+        add_action('wp_ajax_quba_init_sync', [__CLASS__, 'ajax_init_sync']);
+        add_action('wp_ajax_quba_process_batch', [__CLASS__, 'ajax_process_batch']);
+        add_action('wp_ajax_quba_clear_logs', [__CLASS__, 'ajax_clear_logs']);
+        add_action('wp_ajax_quba_save_settings', [__CLASS__, 'ajax_save_settings']); // ADDED: Intercepts notification updates
+    }
+    /**
+     * Parses and securely commits configured option parameters directly to the database layer context block.
+     */
+    public static function ajax_save_settings()
+    {
+        check_ajax_referer('quba_admin_nonce', 'nonce');
+        if (!current_user_can('manage_options')) wp_send_json_error('Unauthorized');
+
+        $email = isset($_POST['notification_email']) ? sanitize_email($_POST['notification_email']) : '';
+        update_option('quba_notification_email', $email);
+
+        wp_send_json_success();
+    }
+    /**
+     * Constructs localized layout logic mapping within default options menu parameter scope blocks dynamically generating layout matrices.
+     */
+    public static function register_menu()
+    {
+        add_submenu_page(
+            'tools.php',
+            'QUBA Data Sync',
+            'QUBA Sync',
+            'manage_options',
+            'quba-sync',
+            [__CLASS__, 'render_admin_page']
+        );
+    }
+
+    /**
+     * Assures JS constraints dynamically isolated to strictly admin menu targets isolating frontend footprint logic dynamically.
+     * @param string $hook Reference to executing view parameter dynamically filtering context arrays logic states.
+     */
+    public static function enqueue_admin_scripts($hook)
+    {
+        if ($hook !== 'tools_page_quba-sync') return;
+
+        wp_enqueue_script('quba-admin-sync', plugin_dir_url(__FILE__) . 'assets/js/admin-sync.js', ['jquery'], '2.8.1', true);
+        wp_localize_script('quba-admin-sync', 'qubaAdminAjax', [
+            'nonce' => wp_create_nonce('quba_admin_nonce')
+        ]);
+    }
+
+    /**
+     * Manages HTML view layout structures injecting variables parameters rendering visual interactive interface constructs.
+     */
+    public static function render_admin_page()
+    {
+        $upload_dir = wp_upload_dir();
+        $log_file = $upload_dir['basedir'] . '/quba-logs/sync.log';
+        $log_content = file_exists($log_file) ? esc_html(file_get_contents($log_file)) : 'No logs generated yet. Run a sync to begin monitoring.';
+
+?>
+        <div class="wrap">
+            <h1>QUBA Manual Synchronization</h1>
+            <p>Use this tool to manually trigger a full synchronization of Qualifications and Units from the QUBA SOAP API.</p>
+
+            <div style="background: #fff; padding: 20px; border: 1px solid #ccd0d4; max-width: 600px; margin-top: 20px; display: inline-block; vertical-align: top;">
+
+                <div style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-left: 4px solid #2271b1;">
+                    <label style="display: block; font-size: 14px; margin-bottom: 10px;"><strong>1. Select Data Entity to Synchronize:</strong></label>
+                    <label style="display: block; margin-bottom: 8px;"><input type="radio" name="quba_sync_type" value="both" checked> Both (Qualifications & Units)</label>
+                    <label style="display: block; margin-bottom: 8px;"><input type="radio" name="quba_sync_type" value="qualifications"> Qualifications Only</label>
+                    <label style="display: block; margin-bottom: 15px;"><input type="radio" name="quba_sync_type" value="units"> Units Only</label>
+
+                    <hr style="border-top: 1px solid #ddd; margin-bottom: 15px;">
+
+                    <label style="display: block; font-size: 14px; margin-bottom: 10px;"><strong>2. Optional: Sync Specific Target ID(s)</strong></label>
+                    <input type="text" id="quba_sync_specific_id" placeholder="e.g. 1234, 5678, 9101" style="width: 100%; max-width: 300px;">
+                    <p class="description" style="font-size: 12px; color: #666; margin-top: 5px;">Leave blank to run a full synchronization. If you enter comma-separated IDs here, the tool will instantly bypass the extraction loops and sync exclusively those items.</p>
+                    <label style="display: block; margin-top: 10px;">
+                        <input type="checkbox" id="quba_specific_id_fallback" value="1">
+                        If specific ID returns no rows, retry once with fallback lookup
+                    </label>
+                </div>
+
+                <button id="quba-start-sync" class="button button-primary button-large">Start Manual Sync</button>
+
+                <div style="margin-top: 20px;">
+                    <strong>Status:</strong> <span id="quba-sync-status">Idle. Ready to sync.</span>
+                </div>
+
+
+                <div style="width: 100%; background-color: #f0f0f1; border-radius: 3px; margin-top: 15px; height: 30px; border: 1px solid #c3c4c7; overflow: hidden;">
+                    <div id="quba-sync-progress-bar" style="width: 0%; height: 100%; background-color: #2271b1; transition: width 0.3s ease; text-align: center; color: white; line-height: 30px; font-weight: bold;">0%</div>
+                </div>
+
+                <div id="quba-debug-panel" style="display:none; margin-top: 20px; padding: 15px; background: #fff; border: 1px solid #ccd0d4; border-left: 4px solid #dba617;">
+                    <h3 style="margin-top:0; font-size: 14px;">Diagnostic Request Data</h3>
+                    <p style="font-size: 12px; color: #666; margin-top: 0; margin-bottom: 10px;">Displays the exact payload sent to the Quartz SOAP API and the raw response status.</p>
+                    <pre id="quba-debug-output" style="font-family: monospace; font-size: 11px; white-space: pre-wrap; word-wrap: break-word; background: #f0f0f1; padding: 10px; max-height: 500px; overflow-y: auto; border: 1px solid #c3c4c7; margin: 0;"></pre>
+                </div>
+
+            </div>
+
+            <div style="background: #fff; padding: 20px; border: 1px solid #ccd0d4; max-width: 600px; margin-top: 20px; display: inline-block; vertical-align: top; margin-left: 20px;">
+
+
+            </div>
+
+            <div style="background: #fff; padding: 20px; border: 1px solid #ccd0d4; max-width: 600px; margin-top: 20px; display: inline-block; vertical-align: top; margin-left: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h2 style="margin:0;">Live Sync Log</h2>
+                    <button class="button" onclick="clearQubaLogs(event)">Clear Log</button>
+                </div>
+                <p class="description" style="margin-top: 0;">Logs record created and updated records from both Manual Syncs and Background Cron tasks.</p>
+                <textarea id="quba-log-viewer" readonly style="width: 100%; height: 350px; font-family: monospace; font-size: 12px; background: #f0f0f1; color: #3c434a; white-space: pre; overflow-wrap: normal; overflow-x: scroll; border: 1px solid #c3c4c7; padding: 10px;"><?= $log_content ?></textarea>
+                <script>
+                    // Auto-scroll to bottom of log viewer
+                    var logViewer = document.getElementById('quba-log-viewer');
+                    logViewer.scrollTop = logViewer.scrollHeight;
+
+                    function clearQubaLogs(e) {
+                        e.preventDefault();
+                        if (confirm('Are you sure you want to delete the sync log history?')) {
+                            jQuery.post(ajaxurl, {
+                                action: 'quba_clear_logs',
+                                nonce: qubaAdminAjax.nonce
+                            }, function(res) {
+                                document.getElementById('quba-log-viewer').value = 'Log cleared.';
+                            });
+                        }
+                    }
+                </script>
+            </div>
+        </div>
+    <?php
+    }
+
+    /**
+     * Clears physical log file upon admin request natively handling AJAX permissions structurally.
+     */
+    public static function ajax_clear_logs()
+    {
+        check_ajax_referer('quba_admin_nonce', 'nonce');
+        if (!current_user_can('manage_options')) wp_send_json_error('Unauthorized');
+
+        $upload_dir = wp_upload_dir();
+        $log_file = $upload_dir['basedir'] . '/quba-logs/sync.log';
+        if (file_exists($log_file)) {
+            file_put_contents($log_file, '');
+        }
+        wp_send_json_success();
+    }
+
+    /**
+     * Formats API execution strings delegating execution target context dependencies mapping queue schemas dynamically.
+     */
+    public static function ajax_init_sync()
+    {
+        check_ajax_referer('quba_admin_nonce', 'nonce');
+        if (!current_user_can('manage_options')) wp_send_json_error('Unauthorized');
+
+        $sync_type = isset($_POST['sync_type']) ? sanitize_text_field($_POST['sync_type']) : 'both';
+        $enable_specific_id_fallback = !empty($_POST['enable_specific_id_fallback']) && $_POST['enable_specific_id_fallback'] === '1';
+
+        $specific_ids = [];
+        if (!empty($_POST['specific_id'])) {
+            $raw_ids = explode(',', sanitize_text_field($_POST['specific_id']));
+            foreach ($raw_ids as $id) {
+                $val = intval(trim($id));
+                if ($val > 0) {
+                    $specific_ids[] = $val;
+                }
+            }
+        }
+
+        // Change this line from $total to $result:
+        $result = Quba_Cron_Sync::build_sync_queue($sync_type, $specific_ids, $enable_specific_id_fallback);
+
+        if ($result === false) wp_send_json_error('Failed to connect to QUBA API.');
+
+        wp_send_json_success([
+            'total' => $result['total'],
+            'debug' => $result['debug']
+        ]);
+    }
+
+    /**
+     * Executes process batches iteratively rendering output properties mapping values sequentially triggering internal cron execution.
+     */
+    public static function ajax_process_batch()
+    {
+        check_ajax_referer('quba_admin_nonce', 'nonce');
+        if (!current_user_can('manage_options')) wp_send_json_error('Unauthorized');
+
+        $remaining = Quba_Cron_Sync::process_batch(5);
+        wp_send_json_success(['remaining' => $remaining]);
+    }
+}
 
 /**
  * Class Quba_Admin_Meta
