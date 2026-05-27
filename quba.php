@@ -979,8 +979,7 @@ class Quba_Admin
             'nonce' => wp_create_nonce('quba_admin_nonce')
         ]);
     }
-
-    /**
+/**
      * Parses and securely commits configured option parameters directly to the database layer context block.
      * Evaluates permission boundaries to ensure strict administrative origin payloads.
      */
@@ -989,8 +988,13 @@ class Quba_Admin
         check_ajax_referer('quba_admin_nonce', 'nonce');
         if (!current_user_can('manage_options')) wp_send_json_error('Unauthorized');
 
-        $email = isset($_POST['notification_email']) ? sanitize_email($_POST['notification_email']) : '';
-        update_option('quba_notification_email', $email);
+        $raw_emails = isset($_POST['notification_email']) ? sanitize_text_field($_POST['notification_email']) : '';
+        
+        // Explode string, trim whitespace, sanitize each email, and remove invalid entries
+        $emails_array = array_map('trim', explode(',', $raw_emails));
+        $valid_emails = array_filter(array_map('sanitize_email', $emails_array));
+        
+        update_option('quba_notification_email', implode(',', $valid_emails));
         
         wp_send_json_success();
     }
@@ -1004,7 +1008,7 @@ class Quba_Admin
         $upload_dir = wp_upload_dir();
         $log_file = $upload_dir['basedir'] . '/quba-logs/sync.log';
         $log_content = file_exists($log_file) ? esc_html(file_get_contents($log_file)) : 'No logs generated yet. Run a sync to begin monitoring.';
-        
+
         // Fetch current recipient target dynamically
         $current_email = get_option('quba_notification_email', get_option('admin_email'));
 
@@ -1056,12 +1060,12 @@ class Quba_Admin
                     <h2 style="margin-top:0; font-size: 16px;">Cron Notification Settings</h2>
                     <p class="description" style="margin-top: 0;">Specify an email address below to receive Start and Finish reports when automated background synchronization sequences execute (e.g. daily updates).</p>
                 </div>
-                
+
                 <div style="margin-bottom: 15px;">
                     <label for="quba_notification_email" style="display: block; font-size: 14px; margin-bottom: 5px;"><strong>Recipient Email Address:</strong></label>
-                    <input type="email" id="quba_notification_email" value="<?= esc_attr($current_email) ?>" placeholder="e.g. admin@domain.com" style="width: 100%; max-width: 400px;">
+                  <input type="email" id="quba_notification_email" value="<?= esc_attr($current_email) ?>" placeholder="e.g. admin@domain.com" style="width: 100%; max-width: 400px;">
                 </div>
-                
+
                 <button id="quba-save-settings" class="button button-secondary">Save Settings</button>
                 <span id="quba-settings-status" style="margin-left: 10px; font-weight: 500; color: #00a32a; display: none;">Saved!</span>
 
@@ -1072,14 +1076,14 @@ class Quba_Admin
                             var $btn = $(this);
                             var $status = $('#quba-settings-status');
                             $btn.prop('disabled', true).text('Saving...');
-                            
+
                             $.post(ajaxurl, {
                                 action: 'quba_save_settings',
                                 nonce: qubaAdminAjax.nonce,
                                 notification_email: $('#quba_notification_email').val()
                             }, function(res) {
                                 $btn.prop('disabled', false).text('Save Settings');
-                                if(res.success) {
+                                if (res.success) {
                                     $status.fadeIn().delay(2000).fadeOut();
                                 }
                             });
