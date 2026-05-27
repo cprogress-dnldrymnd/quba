@@ -607,6 +607,8 @@ class Quba_Cron_Sync
 
    /**
      * Appends a persistent local sync history record for individual posts.
+     * Evaluates thread execution context to designate manual vs automated actions and truncates the array to a strict maximum of 10 elements.
+     *
      * @param int $post_id Target WP Post ID.
      * @param string $message Contextual modification description.
      */
@@ -617,14 +619,17 @@ class Quba_Cron_Sync
             $history = [];
         }
 
+        // Detect if the payload was executed via the manual Admin AJAX interface or Background WP-Cron
+        $sync_type = wp_doing_ajax() ? 'Manual Sync' : 'Automated Cron';
+
         $history[] = [
-            'date' => current_time('mysql'),
-            'message' => $message
+            'date'    => current_time('mysql'),
+            'message' => "[{$sync_type}] " . $message
         ];
 
-        // Cap history to 100 entries to prevent meta bloat
-        if (count($history) > 100) {
-            $history = array_slice($history, -100);
+        // Enforce maximum 10 history entries per listing to optimize database meta table footprint
+        if (count($history) > 10) {
+            $history = array_slice($history, -10);
         }
 
         update_post_meta($post_id, '_quba_sync_history', $history);
