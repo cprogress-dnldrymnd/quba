@@ -192,7 +192,7 @@ class Quba_Post_Types
  */
 class Quba_Cron_Sync
 {
-    /**
+   /**
      * Bootstraps the automated WP-Cron sync sequence mappings.
      */
     public static function init()
@@ -206,6 +206,12 @@ class Quba_Cron_Sync
         add_action('quba_daily_sync_build_queue', [__CLASS__, 'build_sync_queue'], 10);
 
         add_action('quba_process_sync_queue', [__CLASS__, 'process_batch_cron']);
+
+        // --- ADDED: Auto-Healing Cron Check ---
+        // Ensures the batch processor is always scheduled, bypassing the need for manual reactivation after file deployments.
+        if (!wp_next_scheduled('quba_process_sync_queue')) {
+            wp_schedule_event(time(), 'three_minutes', 'quba_process_sync_queue');
+        }
     }
 
     /**
