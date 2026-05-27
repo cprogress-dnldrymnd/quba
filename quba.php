@@ -304,33 +304,35 @@ class Quba_Cron_Sync
     }
 
     /**
-     * Dispatches an email notification to the configured administrator regarding automated sync events.
-     * Evaluates execution context to guarantee emails are only sent during headless WP-Cron background sequences.
+     * Dispatches an email notification to the configured administrator regarding sync events.
+     * Evaluates execution context to dynamically label the notification as Manual or Automated.
      * * @param string $phase Designates the lifecycle phase ('Started' or 'Finished').
      * @param int $item_count The total number of items identified or processed in the queue.
      */
     public static function dispatch_sync_notification($phase, $item_count = 0)
     {
-        // Abort if this is a manual execution via the WordPress Admin interface
-        if (wp_doing_ajax()) return;
-
         $to = get_option('quba_notification_email', '');
         if (empty($to)) return;
 
         $site_name = wp_specialchars_decode(get_option('blogname'), ENT_QUOTES);
-        $subject = "[{$site_name}] QUBA API Sync: {$phase}";
-        $message = "The automated QUBA API synchronization sequence has {$phase}.\n\n";
+        
+        // Dynamically ascertain if a human clicked the button or if the server executed it
+        $sync_type = wp_doing_ajax() ? 'Manual UI' : 'Automated Cron';
+        
+        $subject = "[{$site_name}] QUBA API {$sync_type} Sync: {$phase}";
+        $message = "The {$sync_type} QUBA API synchronization sequence has {$phase}.\n\n";
 
         if ($phase === 'Started') {
-            $message .= "The daily sync queue has been successfully constructed and contains {$item_count} pending items. The background batch processor (process_batch_cron) will now commence execution every 3 minutes until complete.\n\n";
+            $message .= "The sync queue has been successfully constructed and contains {$item_count} pending items. The batch processor will now commence execution until complete.\n\n";
         } else {
-            $message .= "The background queue has been successfully emptied. All qualifications and units have been fully synchronized with the QUBA API.\n\n";
+            $message .= "The sync queue has been successfully emptied. All targeted qualifications and units have been fully synchronized with the QUBA API.\n\n";
         }
-
+        
         $message .= "Server Time: " . current_time('mysql') . "\n";
 
         wp_mail($to, $subject, $message);
     }
+
 
     /**
      * Traverses the SOAP API matrix iteratively compiling all remote items into a transient queue buffer.
