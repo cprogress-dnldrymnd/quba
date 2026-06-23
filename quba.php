@@ -3,8 +3,8 @@
 /**
  * Plugin Name: Quba System Integration
  * Description: Integrates QUBA SOAP API, synchronizes units/qualifications via batched processes, and provides custom native templates & meta boxes. Includes persistent background sync logging.
- * Version: 2.8.2
- * Author: Digitally Disruptive - Donald Raymundo
+ * Version: 2.8.3
+ * Author: Digitally Disruptive
  * Author URI: https://digitallydisruptive.co.uk/
  * Text Domain: quba-integration
  */
@@ -450,6 +450,9 @@ class Quba_Cron_Sync
                             }
                             if (isset($qual->Classifications->Classification2)) {
                                 $data['Classification2'] = trim((string) $qual->Classifications->Classification2);
+                            }
+                            if (isset($qual->Classifications->Classification3)) {
+                                $data['Classification3'] = trim((string) $qual->Classifications->Classification3);
                             }
 
                             $id = $data['ID'] ?? '';
@@ -974,7 +977,7 @@ class Quba_Admin
     {
         if ($hook !== 'tools_page_quba-sync') return;
 
-        wp_enqueue_script('quba-admin-sync', plugin_dir_url(__FILE__) . 'assets/js/admin-sync.js', ['jquery'], '2.8.1', true);
+        wp_enqueue_script('quba-admin-sync', plugin_dir_url(__FILE__) . 'assets/js/admin-sync.js', ['jquery'], '2.8.3', true);
         wp_localize_script('quba-admin-sync', 'qubaAdminAjax', [
             'nonce' => wp_create_nonce('quba_admin_nonce')
         ]);
@@ -1235,6 +1238,7 @@ class Quba_Admin_Meta
             '_type' => 'Type',
             '_classification1' => 'Sector',
             '_classification2' => 'Risk Rating',
+            '_classification3' => 'Regulatory Body',
             '_level' => 'Level',
             '_regulationstartdate' => 'Certification Start Date',
             '_regulationenddate' => 'Certification End Date',
@@ -1809,8 +1813,8 @@ class Quba_Controllers
             is_post_type_archive('qualifications') || is_post_type_archive('units') ||
             is_singular('qualifications') || is_singular('units') || is_tax('qualifications_cat')
         ) {
-            wp_enqueue_style('quba-main-css', plugin_dir_url(__FILE__) . 'assets/css/main.css', [], '2.8.2', 'all');
-            wp_enqueue_script('quba-main-js', plugin_dir_url(__FILE__) . 'assets/js/main.js', ['jquery'], '2.8.2', true);
+            wp_enqueue_style('quba-main-css', plugin_dir_url(__FILE__) . 'assets/css/main.css', [], '2.8.3', 'all');
+            wp_enqueue_script('quba-main-js', plugin_dir_url(__FILE__) . 'assets/js/main.js', ['jquery'], '2.8.3', true);
             wp_localize_script('quba-main-js', 'qubaAjaxObj', [
                 'ajaxUrl' => admin_url('admin-ajax.php'),
                 'nonce'   => wp_create_nonce('quba_ajax_nonce')
@@ -1956,6 +1960,9 @@ class Quba_Controllers
         }
         if (!empty($_POST['qualificationType'])) {
             $args['meta_query'][] = ['key' => '_type', 'value' => sanitize_text_field($_POST['qualificationType']), 'compare' => 'LIKE'];
+        }
+        if (!empty($_POST['provisionType'])) {
+            $args['meta_query'][] = ['key' => '_classification3', 'value' => sanitize_text_field($_POST['provisionType']), 'compare' => '='];
         }
         if (!empty($_POST['tqt'])) {
             $args['meta_query'][] = ['key' => '_tqt', 'value' => sanitize_text_field($_POST['tqt']), 'compare' => '='];

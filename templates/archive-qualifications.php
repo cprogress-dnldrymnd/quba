@@ -62,7 +62,7 @@ $chev = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="cu
                                 <input type="text" name="unitID" placeholder="Open Awards Unit ID e.g. CBF498" class="trigger-type">
                             </div>
 
-                            <div class="col-lg-6 search-field search-qual search-units level">
+                            <div class="col-lg-4 search-field search-qual search-units level">
                                 <?php
                                 // 1. Fetch and filter the raw levels
                                 $raw_levels = array_filter(get_unique_meta_values('_level'));
@@ -91,7 +91,7 @@ $chev = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="cu
                                 </select>
                             </div>
 
-                            <div class="col-lg-6 search-field search-qual search-units sector">
+                            <div class="col-lg-4 search-field search-qual search-units sector">
                                 <?php
                                 $sectors = Quba_API::get_qca_sectors();
                                 $qcaSector_val = isset($_GET['qcaSector']) ? sanitize_text_field($_GET['qcaSector']) : false;
@@ -102,6 +102,25 @@ $chev = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="cu
                                             <option value="<?= esc_attr($sector->Code) ?>" <?= selected($sector->Code, $qcaSector_val, false) ?>><?= esc_html($sector->Classification) ?></option>
                                     <?php }
                                     endif; ?>
+                                </select>
+                            </div>
+
+                            <div class="col-lg-4 search-field search-qual regulator">
+                                <?php
+                                $provision_type_val = isset($_GET['provisionType']) ? sanitize_text_field($_GET['provisionType']) : '';
+                                $regulators = [
+                                    'Ofqual'         => 'Ofqual',
+                                    'QiW'            => 'Qualifications Wales',
+                                    'QAA'            => 'QAA',
+                                    'Not Regulated'  => 'Not Regulated',
+                                    'GPhC'           => 'GPhC',
+                                ];
+                                ?>
+                                <select class="trigger-ajax-change" name="provisionType" id="provisionType">
+                                    <option value="">Regulatory Body</option>
+                                    <?php foreach ($regulators as $code => $label) { ?>
+                                        <option value="<?= esc_attr($code) ?>" <?= selected($code, $provision_type_val, false) ?>><?= esc_html($label) ?></option>
+                                    <?php } ?>
                                 </select>
                             </div>
 

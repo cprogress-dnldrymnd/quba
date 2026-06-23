@@ -3,7 +3,7 @@
 /**
  * Template Name: Unit Single
  * Description: Renders individual unit pages utilizing localized WP Meta architecture.
- * Author: Digitally Disruptive - Donald Raymundo
+ * Author: Digitally Disruptive
  * Author URI: https://digitallydisruptive.co.uk/
  */
 

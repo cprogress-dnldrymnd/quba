@@ -83,6 +83,7 @@ jQuery(document).ready(function ($) {
             urlParams.has('Level') ||
             urlParams.has('qcaSector') ||
             urlParams.has('qualificationType') ||
+            urlParams.has('provisionType') ||
             urlParams.has('qcaCode') ||
             urlParams.has('unitID') ||
             urlParams.has('unitType') ||
@@ -231,6 +232,7 @@ jQuery(document).ready(function ($) {
             unitLevel: $('#level').val(),
             qcaSector: $('#qcaSector').val(),
             qualificationType: $('#type').val(),
+            provisionType: $('#provisionType').val(),
             unitType: $('#unitType').val(),
             tqt: $('#tqt').val()
         };

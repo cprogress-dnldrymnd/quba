@@ -3,7 +3,7 @@
 /**
  * Template Name: Qualification Single
  * Description: Renders individual qualification pages decoupled from SOAP limitations mapping to WP post meta fields.
- * Author: Digitally Disruptive - Donald Raymundo
+ * Author: Digitally Disruptive
  * Author URI: https://digitallydisruptive.co.uk/
  */
 get_header();
@@ -46,6 +46,19 @@ $additional_documents = get_post_meta($post_id, 'additional_documents', true);
                                 <div class="key-info-items">
                                     <?php
                                     echo Quba_Render::render_key_info($post_id, 'type', 'Qualification Type');
+
+                                    $regulatory_body = get_post_meta($post_id, '_classification3', true);
+                                    $regulatory_body_labels = [
+                                        'Ofqual'        => 'Ofqual',
+                                        'QiW'           => 'Qualifications Wales',
+                                        'QAA'           => 'QAA',
+                                        'Not Regulated' => 'Not Regulated',
+                                        'GPhC'          => 'GPhC',
+                                    ];
+                                    $regulatory_body_display = !empty($regulatory_body)
+                                        ? ($regulatory_body_labels[$regulatory_body] ?? $regulatory_body)
+                                        : 'N/A';
+                                    echo "<div class='key-info-item'><strong>Regulatory Body:</strong> " . esc_html($regulatory_body_display) . "</div>";
 
                                     $sector = get_post_meta($post_id, '_classification1', true);
                                     echo "<div class='key-info-item'><strong>Sector:</strong> " . (!empty($sector) ? esc_html($sector) : 'N/A') . "</div>";
