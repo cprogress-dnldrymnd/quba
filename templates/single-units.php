@@ -36,6 +36,7 @@ $additional_documents = get_post_meta($post_id, 'additional_documents', true);
         <?php
         }
         ?>
+        <?php get_template_part('template-parts/page', 'breadcrumbs'); ?>
 
         <section class="hero-style-1"
             style="background-image: url(https://openawards.theprogressteam.com/wp-content/uploads/2024/12/qual-hero-bg.png)">
