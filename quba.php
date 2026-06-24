@@ -992,13 +992,17 @@ class Quba_Admin
         if (!current_user_can('manage_options')) wp_send_json_error('Unauthorized');
 
         $raw_emails = isset($_POST['notification_email']) ? sanitize_text_field($_POST['notification_email']) : '';
-        
+
         // Explode string, trim whitespace, sanitize each email, and remove invalid entries
         $emails_array = array_map('trim', explode(',', $raw_emails));
         $valid_emails = array_filter(array_map('sanitize_email', $emails_array));
-        
+
         update_option('quba_notification_email', implode(',', $valid_emails));
-        
+
+        // Persist the debug-info visibility toggle (debug block is shown to admins on single templates)
+        $hide_debug = !empty($_POST['hide_debug_info']) && $_POST['hide_debug_info'] === '1';
+        update_option('quba_hide_debug_info', $hide_debug ? '1' : '0');
+
         wp_send_json_success();
     }
 
@@ -1014,6 +1018,9 @@ class Quba_Admin
 
         // Fetch current recipient target dynamically
         $current_email = get_option('quba_notification_email', get_option('admin_email'));
+
+        // Fetch current debug-info visibility toggle (defaults to visible for admins)
+        $hide_debug_info = get_option('quba_hide_debug_info', '0') === '1';
 
 ?>
         <div class="wrap">
@@ -1069,6 +1076,17 @@ class Quba_Admin
                   <input type="email" id="quba_notification_email" value="<?= esc_attr($current_email) ?>" placeholder="e.g. admin@domain.com" style="width: 100%; max-width: 400px;">
                 </div>
 
+                <hr style="border-top: 1px solid #ddd; margin: 15px 0;">
+
+                <div style="margin-bottom: 15px;">
+                    <h2 style="margin-top:0; font-size: 16px;">Frontend Display Settings</h2>
+                    <label style="display: block; font-size: 14px;">
+                        <input type="checkbox" id="quba_hide_debug_info" value="1" <?php checked($hide_debug_info); ?>>
+                        <strong>Hide debug info on single Unit/Qualification pages</strong>
+                    </label>
+                    <p class="description" style="font-size: 12px; color: #666; margin-top: 5px;">The debug information block is only ever visible to logged-in administrators. Tick this box to hide it from administrators too.</p>
+                </div>
+
                 <button id="quba-save-settings" class="button button-secondary">Save Settings</button>
                 <span id="quba-settings-status" style="margin-left: 10px; font-weight: 500; color: #00a32a; display: none;">Saved!</span>
 
@@ -1083,7 +1101,8 @@ class Quba_Admin
                             $.post(ajaxurl, {
                                 action: 'quba_save_settings',
                                 nonce: qubaAdminAjax.nonce,
-                                notification_email: $('#quba_notification_email').val()
+                                notification_email: $('#quba_notification_email').val(),
+                                hide_debug_info: $('#quba_hide_debug_info').is(':checked') ? '1' : '0'
                             }, function(res) {
                                 $btn.prop('disabled', false).text('Save Settings');
                                 if (res.success) {

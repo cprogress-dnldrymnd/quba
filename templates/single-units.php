@@ -22,7 +22,7 @@ $additional_documents = get_post_meta($post_id, 'additional_documents', true);
     <div id="content" role="main" class="span8 offset2">
 
         <?php
-        if (current_user_can('administrator')) {
+        if (current_user_can('administrator') && get_option('quba_hide_debug_info', '0') !== '1') {
             echo '<div class="debug-info">';
             echo '<h3>Debug Information (Admin Only)</h3>';
             echo '<p>Mapped WP Post ID: ' . esc_html($post_id) . '</p>';
