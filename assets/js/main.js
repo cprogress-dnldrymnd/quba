@@ -87,7 +87,8 @@ jQuery(document).ready(function ($) {
             urlParams.has('qcaCode') ||
             urlParams.has('unitID') ||
             urlParams.has('unitType') ||
-            urlParams.has('tqt');
+            urlParams.has('tqt') ||
+            urlParams.has('minAge');
 
     }
 
@@ -234,7 +235,8 @@ jQuery(document).ready(function ($) {
             qualificationType: $('#type').val(),
             provisionType: $('#provisionType').val(),
             unitType: $('#unitType').val(),
-            tqt: $('#tqt').val()
+            tqt: $('#tqt').val(),
+            minAge: $('#minAge').val()
         };
 
         var $resultsHolder = $('.results-holder');

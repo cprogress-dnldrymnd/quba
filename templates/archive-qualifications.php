@@ -124,7 +124,7 @@ $chev = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="cu
                                 </select>
                             </div>
 
-                            <div class="col-lg-6 search-field search-qual type">
+                            <div class="col-lg-4 search-field search-qual type">
                                 <?php $qual_type_val = isset($_GET['qualificationType']) ? sanitize_text_field($_GET['qualificationType']) : ''; ?>
                                 <select class="trigger-ajax-change" name="qualificationType" id="type">
                                     <option value="">Qualification Type</option>
@@ -152,7 +152,7 @@ $chev = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="cu
                                 </select>
                             </div>
 
-                            <div class="col-lg-6 search-field search-qual tqt">
+                            <div class="col-lg-4 search-field search-qual tqt">
                                 <?php
                                 $raw_tqts = array_filter(get_unique_meta_values('_tqt'));
                                 $tqt_val = isset($_GET['tqt']) ? sanitize_text_field($_GET['tqt']) : '';
@@ -164,6 +164,23 @@ $chev = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="cu
                                     <option value="">Total Qualification Time (TQT)</option>
                                     <?php foreach ($raw_tqts as $tqt) { ?>
                                         <option value="<?= esc_attr($tqt) ?>" <?= selected($tqt, $tqt_val, false) ?>><?= esc_html($tqt) ?></option>
+                                    <?php } ?>
+                                </select>
+                            </div>
+
+                            <div class="col-lg-4 search-field search-qual min-age">
+                                <?php
+                                $raw_min_ages = array_filter(get_unique_meta_values('_minage'), static function ($age) {
+                                    return is_numeric($age) && (int) $age > 0;
+                                });
+                                $min_ages = array_unique(array_map('intval', $raw_min_ages));
+                                sort($min_ages, SORT_NUMERIC);
+                                $min_age_val = isset($_GET['minAge']) ? intval($_GET['minAge']) : 0;
+                                ?>
+                                <select class="trigger-ajax-change" name="minAge" id="minAge">
+                                    <option value="">Minimum Age</option>
+                                    <?php foreach ($min_ages as $age) { ?>
+                                        <option value="<?= esc_attr($age) ?>" <?= selected($age, $min_age_val, false) ?>><?= esc_html($age) ?></option>
                                     <?php } ?>
                                 </select>
                             </div>
