@@ -1219,6 +1219,94 @@ class Quba_Admin_Meta
         add_action('save_post', [__CLASS__, 'save_meta_boxes']);
         add_action('admin_enqueue_scripts', [__CLASS__, 'enqueue_scripts']);
         add_action('admin_footer', [__CLASS__, 'render_inline_js_css']);
+
+        add_filter('manage_qualifications_posts_columns', [__CLASS__, 'qualifications_columns']);
+        add_action('manage_qualifications_posts_custom_column', [__CLASS__, 'qualifications_custom_column'], 10, 2);
+        add_filter('manage_edit-qualifications_sortable_columns', [__CLASS__, 'qualifications_sortable_columns']);
+        add_action('pre_get_posts', [__CLASS__, 'qualifications_orderby_operational_start']);
+    }
+
+    /**
+     * Inserts Operational Start Date into the qualifications list table (before Date).
+     *
+     * @param array $columns Existing list-table columns.
+     * @return array
+     */
+    public static function qualifications_columns($columns)
+    {
+        $new = [];
+        foreach ($columns as $key => $label) {
+            if ($key === 'date') {
+                $new['operational_start_date'] = __('Operational Start Date', 'quba');
+            }
+            $new[$key] = $label;
+        }
+        if (!isset($new['operational_start_date'])) {
+            $new['operational_start_date'] = __('Operational Start Date', 'quba');
+        }
+        return $new;
+    }
+
+    /**
+     * Renders the Operational Start Date cell for a qualifications row.
+     *
+     * @param string $column  Column key.
+     * @param int    $post_id Post ID.
+     */
+    public static function qualifications_custom_column($column, $post_id)
+    {
+        if ($column !== 'operational_start_date') {
+            return;
+        }
+
+        $raw = get_post_meta($post_id, '_operationalstartdate', true);
+        if ($raw === '' || $raw === null) {
+            echo '—';
+            return;
+        }
+
+        $timestamp = strtotime($raw);
+        if ($timestamp) {
+            echo esc_html(date_i18n('Y/m/d', $timestamp));
+        } else {
+            echo esc_html(substr((string) $raw, 0, 10));
+        }
+    }
+
+    /**
+     * Marks Operational Start Date as a sortable list-table column.
+     *
+     * @param array $columns Sortable columns map.
+     * @return array
+     */
+    public static function qualifications_sortable_columns($columns)
+    {
+        $columns['operational_start_date'] = 'operational_start_date';
+        return $columns;
+    }
+
+    /**
+     * Applies meta_value ordering when sorting by Operational Start Date.
+     * ISO-8601 values (YYYY-MM-DD…) sort correctly as strings.
+     *
+     * @param WP_Query $query Main admin query.
+     */
+    public static function qualifications_orderby_operational_start($query)
+    {
+        if (!is_admin() || !$query->is_main_query()) {
+            return;
+        }
+
+        if ($query->get('post_type') !== 'qualifications') {
+            return;
+        }
+
+        if ($query->get('orderby') !== 'operational_start_date') {
+            return;
+        }
+
+        $query->set('meta_key', '_operationalstartdate');
+        $query->set('orderby', 'meta_value');
     }
 
     /**
