@@ -1839,7 +1839,7 @@ class Quba_Controllers
             'name'        => __('Coming Soon Qualifications', 'quba'),
             'base'        => 'coming_soon_qualifications',
             'category'    => __('Quba', 'quba'),
-            'description' => __('Lists qualifications whose Certification Start Date falls within a future day window.', 'quba'),
+            'description' => __('Lists qualifications whose Operational Start Date falls within a future day window.', 'quba'),
             'icon'        => 'icon-wpb-application-icon-large',
             'params'      => [
                 [
@@ -1848,7 +1848,7 @@ class Quba_Controllers
                     'param_name'  => 'days',
                     'value'       => '90',
                     'admin_label' => true,
-                    'description' => __('Show qualifications with a Certification Start Date from tomorrow through today plus this many days (1–365).', 'quba'),
+                    'description' => __('Show qualifications with an Operational Start Date from tomorrow through today plus this many days (1–365).', 'quba'),
                 ],
                 [
                     'type'        => 'dropdown',
@@ -2277,8 +2277,11 @@ class Quba_Controllers
     }
 
     /**
-     * Renders qualifications whose Certification Start Date falls in a future window.
+     * Renders qualifications whose Operational Start Date falls in a future window.
      * Used by the WP Bakery "Coming Soon Qualifications" element.
+     *
+     * Meta dates are stored as ISO-8601 (e.g. 2026-09-01T00:00:00+01:00), so bounds
+     * use CHAR prefix compares against Y-m-d rather than CAST AS DATE.
      *
      * @param array|string $atts Shortcode attributes (days, show_count).
      * @return string HTML grid of coming-soon qualification cards.
@@ -2296,29 +2299,30 @@ class Quba_Controllers
         }
 
         $today = current_time('Y-m-d');
+        $tomorrow = date('Y-m-d', strtotime($today . ' +1 day'));
         $until = date('Y-m-d', strtotime($today . ' +' . $days . ' days'));
+        $until_exclusive = date('Y-m-d', strtotime($until . ' +1 day'));
 
         $args = [
             'post_type'      => 'qualifications',
             'posts_per_page' => -1,
             'post_status'    => 'publish',
-            'meta_key'       => '_regulationstartdate',
+            'meta_key'       => '_operationalstartdate',
             'orderby'        => 'meta_value',
             'order'          => 'ASC',
-            'meta_type'      => 'DATE',
             'meta_query'     => [
                 'relation' => 'AND',
                 [
-                    'key'     => '_regulationstartdate',
-                    'value'   => $today,
-                    'compare' => '>',
-                    'type'    => 'DATE',
+                    'key'     => '_operationalstartdate',
+                    'value'   => $tomorrow,
+                    'compare' => '>=',
+                    'type'    => 'CHAR',
                 ],
                 [
-                    'key'     => '_regulationstartdate',
-                    'value'   => $until,
-                    'compare' => '<=',
-                    'type'    => 'DATE',
+                    'key'     => '_operationalstartdate',
+                    'value'   => $until_exclusive,
+                    'compare' => '<',
+                    'type'    => 'CHAR',
                 ],
                 [
                     'relation' => 'OR',
@@ -2326,7 +2330,7 @@ class Quba_Controllers
                         'key'     => '_regulationenddate',
                         'value'   => $today,
                         'compare' => '>=',
-                        'type'    => 'DATE',
+                        'type'    => 'CHAR',
                     ],
                     [
                         'key'     => '_regulationenddate',
