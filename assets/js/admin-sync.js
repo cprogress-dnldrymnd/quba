@@ -4,6 +4,8 @@ jQuery(document).ready(function ($) {
     var $startButton = $('#quba-start-sync');
     var totalItems = 0;
     var processedItems = 0;
+    var mediaFrame = null;
+    var activePicker = null;
 
     $startButton.on('click', function (e) {
         e.preventDefault();
@@ -102,4 +104,131 @@ jQuery(document).ready(function ($) {
             }
         });
     }
+
+    /**
+     * Collect sector card media attachment IDs from the admin table.
+     */
+    function collectSectorMedia() {
+        var sectorMedia = {};
+        var $rows = $('.quba-sector-media-row');
+
+        if (!$rows.length) {
+            return null;
+        }
+
+        $rows.each(function () {
+            var code = String($(this).data('code'));
+            sectorMedia[code] = {
+                image_id: parseInt($(this).find('.quba-sector-image-id').val(), 10) || 0,
+                icon_id: parseInt($(this).find('.quba-sector-icon-id').val(), 10) || 0
+            };
+        });
+
+        return sectorMedia;
+    }
+
+    /**
+     * Save notification / display settings and sector media mappings.
+     */
+    function saveQubaSettings($btn) {
+        var $status = $('.quba-settings-status-shared');
+        var $buttons = $('.quba-save-settings-btn');
+        var payload = {
+            action: 'quba_save_settings',
+            nonce: qubaAdminAjax.nonce,
+            notification_email: $('#quba_notification_email').val(),
+            hide_debug_info: $('#quba_hide_debug_info').is(':checked') ? '1' : '0'
+        };
+        var sectorMedia = collectSectorMedia();
+
+        if (sectorMedia !== null) {
+            payload.sector_media = JSON.stringify(sectorMedia);
+        }
+
+        $buttons.prop('disabled', true);
+        $btn.text('Saving...');
+
+        $.post(ajaxurl, payload, function (res) {
+            $buttons.prop('disabled', false).text('Save Settings');
+            if (res.success) {
+                $status.fadeIn().delay(2000).fadeOut();
+            }
+        }).fail(function () {
+            $buttons.prop('disabled', false).text('Save Settings');
+        });
+    }
+
+    $(document).on('click', '.quba-save-settings-btn', function (e) {
+        e.preventDefault();
+        saveQubaSettings($(this));
+    });
+
+    $(document).on('click', '.quba-sector-select', function (e) {
+        e.preventDefault();
+
+        if (typeof wp === 'undefined' || !wp.media) {
+            return;
+        }
+
+        activePicker = $(this).closest('.quba-sector-picker');
+        var field = activePicker.data('field');
+        var title = field === 'icon' ? 'Select Sector Badge Icon' : 'Select Sector Card Image';
+        var buttonText = field === 'icon' ? 'Use this icon' : 'Use this image';
+
+        if (mediaFrame) {
+            mediaFrame.off('select');
+        }
+
+        mediaFrame = wp.media({
+            title: title,
+            button: { text: buttonText },
+            library: { type: 'image' },
+            multiple: false
+        });
+
+        mediaFrame.on('select', function () {
+            if (!activePicker || !activePicker.length) {
+                return;
+            }
+
+            var attachment = mediaFrame.state().get('selection').first().toJSON();
+            var previewUrl = (attachment.sizes && attachment.sizes.medium)
+                ? attachment.sizes.medium.url
+                : attachment.url;
+            var previewStyle = activePicker.data('field') === 'icon'
+                ? 'max-width:48px; max-height:48px; height:auto; display:block; border:1px solid #c3c4c7; border-radius:50%;'
+                : 'max-width:120px; max-height:80px; height:auto; display:block; border:1px solid #c3c4c7;';
+
+            if (activePicker.data('field') === 'icon') {
+                activePicker.find('.quba-sector-icon-id').val(attachment.id);
+                if (attachment.sizes && attachment.sizes.thumbnail) {
+                    previewUrl = attachment.sizes.thumbnail.url;
+                }
+            } else {
+                activePicker.find('.quba-sector-image-id').val(attachment.id);
+            }
+
+            activePicker.find('.quba-sector-preview').html(
+                '<img src="' + previewUrl + '" alt="" style="' + previewStyle + '">'
+            );
+            activePicker.find('.quba-sector-clear').show();
+        });
+
+        mediaFrame.open();
+    });
+
+    $(document).on('click', '.quba-sector-clear', function (e) {
+        e.preventDefault();
+        var $picker = $(this).closest('.quba-sector-picker');
+        var emptyLabel = $picker.data('field') === 'icon' ? 'No icon selected' : 'No image selected';
+
+        if ($picker.data('field') === 'icon') {
+            $picker.find('.quba-sector-icon-id').val('');
+        } else {
+            $picker.find('.quba-sector-image-id').val('');
+        }
+
+        $picker.find('.quba-sector-preview').html('<em style="color:#646970;">' + emptyLabel + '</em>');
+        $(this).hide();
+    });
 });

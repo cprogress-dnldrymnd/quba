@@ -3,7 +3,7 @@
 /**
  * Plugin Name: Quba System Integration
  * Description: Integrates QUBA SOAP API, synchronizes units/qualifications via batched processes, and provides custom native templates & meta boxes. Includes persistent background sync logging.
- * Version: 2.8.4
+ * Version: 2.8.5
  * Author: Digitally Disruptive
  * Author URI: https://digitallydisruptive.co.uk/
  * Text Domain: quba-integration
@@ -977,7 +977,8 @@ class Quba_Admin
     {
         if ($hook !== 'tools_page_quba-sync') return;
 
-        wp_enqueue_script('quba-admin-sync', plugin_dir_url(__FILE__) . 'assets/js/admin-sync.js', ['jquery'], '2.8.4', true);
+        wp_enqueue_media();
+        wp_enqueue_script('quba-admin-sync', plugin_dir_url(__FILE__) . 'assets/js/admin-sync.js', ['jquery'], '2.8.5', true);
         wp_localize_script('quba-admin-sync', 'qubaAdminAjax', [
             'nonce' => wp_create_nonce('quba_admin_nonce')
         ]);
@@ -1003,6 +1004,30 @@ class Quba_Admin
         $hide_debug = !empty($_POST['hide_debug_info']) && $_POST['hide_debug_info'] === '1';
         update_option('quba_hide_debug_info', $hide_debug ? '1' : '0');
 
+        // Persist per-sector card image / badge icon attachment mappings when provided
+        if (isset($_POST['sector_media'])) {
+            $raw_sector_media = wp_unslash($_POST['sector_media']);
+            if (is_string($raw_sector_media)) {
+                $decoded = json_decode($raw_sector_media, true);
+                $raw_sector_media = is_array($decoded) ? $decoded : [];
+            }
+
+            $sanitized = [];
+            if (is_array($raw_sector_media)) {
+                foreach ($raw_sector_media as $code => $map) {
+                    $code_key = sanitize_text_field((string) $code);
+                    if ($code_key === '' || !is_array($map)) {
+                        continue;
+                    }
+                    $sanitized[$code_key] = [
+                        'image_id' => isset($map['image_id']) ? absint($map['image_id']) : 0,
+                        'icon_id'  => isset($map['icon_id']) ? absint($map['icon_id']) : 0,
+                    ];
+                }
+            }
+            update_option('quba_sector_media', $sanitized);
+        }
+
         wp_send_json_success();
     }
 
@@ -1021,6 +1046,14 @@ class Quba_Admin
 
         // Fetch current debug-info visibility toggle (defaults to visible for admins)
         $hide_debug_info = get_option('quba_hide_debug_info', '0') === '1';
+
+        // Sector card media mappings (attachment IDs keyed by QCA sector Code)
+        $sector_media = get_option('quba_sector_media', []);
+        if (!is_array($sector_media)) {
+            $sector_media = [];
+        }
+        $sectors = Quba_API::get_qca_sectors();
+        $sectors_available = !($sectors instanceof Exception) && !empty($sectors);
 
 ?>
         <div class="wrap">
@@ -1087,31 +1120,8 @@ class Quba_Admin
                     <p class="description" style="font-size: 12px; color: #666; margin-top: 5px;">The debug information block is only ever visible to logged-in administrators. Tick this box to hide it from administrators too.</p>
                 </div>
 
-                <button id="quba-save-settings" class="button button-secondary">Save Settings</button>
-                <span id="quba-settings-status" style="margin-left: 10px; font-weight: 500; color: #00a32a; display: none;">Saved!</span>
-
-                <script>
-                    jQuery(document).ready(function($) {
-                        $('#quba-save-settings').on('click', function(e) {
-                            e.preventDefault();
-                            var $btn = $(this);
-                            var $status = $('#quba-settings-status');
-                            $btn.prop('disabled', true).text('Saving...');
-
-                            $.post(ajaxurl, {
-                                action: 'quba_save_settings',
-                                nonce: qubaAdminAjax.nonce,
-                                notification_email: $('#quba_notification_email').val(),
-                                hide_debug_info: $('#quba_hide_debug_info').is(':checked') ? '1' : '0'
-                            }, function(res) {
-                                $btn.prop('disabled', false).text('Save Settings');
-                                if (res.success) {
-                                    $status.fadeIn().delay(2000).fadeOut();
-                                }
-                            });
-                        });
-                    });
-                </script>
+                <button id="quba-save-settings" class="button button-secondary quba-save-settings-btn">Save Settings</button>
+                <span class="quba-settings-status-shared" style="margin-left: 10px; font-weight: 500; color: #00a32a; display: none;">Saved!</span>
             </div>
 
             <div style="background: #fff; padding: 20px; border: 1px solid #ccd0d4; max-width: 600px; margin-top: 20px; display: inline-block; vertical-align: top; margin-left: 20px;">
@@ -1138,6 +1148,77 @@ class Quba_Admin
                         }
                     }
                 </script>
+            </div>
+
+            <div id="quba-sector-media-panel" style="background: #fff; padding: 20px; border: 1px solid #ccd0d4; margin-top: 20px; clear: both; max-width: 1100px;">
+                <h2 style="margin-top: 0;">Sector Card Media</h2>
+                <p class="description" style="margin-top: 0;">Assign a listing-card image and badge icon for each QCA sector. Cards use the mapped image as the hero and show the icon beside the sector name.</p>
+
+                <?php if (!$sectors_available) : ?>
+                    <div class="notice notice-warning inline" style="margin: 10px 0 0;">
+                        <p>QCA sectors could not be loaded from the API. Existing mappings were left unchanged. Try again when the API is available.</p>
+                    </div>
+                <?php else : ?>
+                    <table class="widefat striped" style="margin-top: 15px;">
+                        <thead>
+                            <tr>
+                                <th style="width: 32%;">Sector</th>
+                                <th style="width: 34%;">Card Image</th>
+                                <th style="width: 34%;">Badge Icon</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($sectors as $sector) :
+                                $code = (string) $sector->Code;
+                                $classification = (string) $sector->Classification;
+                                $map = isset($sector_media[$code]) && is_array($sector_media[$code]) ? $sector_media[$code] : [];
+                                $image_id = isset($map['image_id']) ? absint($map['image_id']) : 0;
+                                $icon_id = isset($map['icon_id']) ? absint($map['icon_id']) : 0;
+                                $image_url = $image_id ? wp_get_attachment_image_url($image_id, 'medium') : '';
+                                $icon_url = $icon_id ? wp_get_attachment_image_url($icon_id, 'thumbnail') : '';
+                                ?>
+                                <tr class="quba-sector-media-row" data-code="<?= esc_attr($code) ?>">
+                                    <td>
+                                        <strong><?= esc_html($classification) ?></strong>
+                                        <div style="color:#646970; font-size:12px; margin-top:4px;">Code: <?= esc_html($code) ?></div>
+                                    </td>
+                                    <td>
+                                        <div class="quba-sector-picker" data-field="image">
+                                            <input type="hidden" class="quba-sector-image-id" value="<?= esc_attr($image_id) ?>">
+                                            <div class="quba-sector-preview" style="margin-bottom:8px; min-height:40px;">
+                                                <?php if ($image_url) : ?>
+                                                    <img src="<?= esc_url($image_url) ?>" alt="" style="max-width:120px; max-height:80px; height:auto; display:block; border:1px solid #c3c4c7;">
+                                                <?php else : ?>
+                                                    <em style="color:#646970;">No image selected</em>
+                                                <?php endif; ?>
+                                            </div>
+                                            <button type="button" class="button quba-sector-select">Select Image</button>
+                                            <button type="button" class="button quba-sector-clear" <?= $image_id ? '' : 'style="display:none;"' ?>>Clear</button>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div class="quba-sector-picker" data-field="icon">
+                                            <input type="hidden" class="quba-sector-icon-id" value="<?= esc_attr($icon_id) ?>">
+                                            <div class="quba-sector-preview" style="margin-bottom:8px; min-height:40px;">
+                                                <?php if ($icon_url) : ?>
+                                                    <img src="<?= esc_url($icon_url) ?>" alt="" style="max-width:48px; max-height:48px; height:auto; display:block; border:1px solid #c3c4c7; border-radius:50%;">
+                                                <?php else : ?>
+                                                    <em style="color:#646970;">No icon selected</em>
+                                                <?php endif; ?>
+                                            </div>
+                                            <button type="button" class="button quba-sector-select">Select Icon</button>
+                                            <button type="button" class="button quba-sector-clear" <?= $icon_id ? '' : 'style="display:none;"' ?>>Clear</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                    <p style="margin-top: 15px;">
+                        <button type="button" class="button button-primary quba-save-settings-btn">Save Settings</button>
+                        <span class="quba-settings-status-shared" style="margin-left: 10px; font-weight: 500; color: #00a32a; display: none;">Saved!</span>
+                    </p>
+                <?php endif; ?>
             </div>
         </div>
     <?php
@@ -1658,6 +1739,75 @@ class Quba_Admin_Meta
 class Quba_Render
 {
     /**
+     * Resolves a listing's sector meta value to configured card image / badge icon URLs.
+     * Matches by exact Code, then walks numeric prefixes (e.g. 1.2.3 → 1.2 → 1).
+     *
+     * @param string $sector_value Raw sector meta (e.g. "14. History, Philosophy and Theology").
+     * @return array|null { image_url, icon_url, label, code } or null when nothing configured.
+     */
+    public static function get_sector_media($sector_value)
+    {
+        $mappings = get_option('quba_sector_media', []);
+        if (!is_array($mappings) || $sector_value === null || $sector_value === '') {
+            return null;
+        }
+
+        $sector_value = trim((string) $sector_value);
+        if ($sector_value === '') {
+            return null;
+        }
+
+        $matched_code = null;
+        $matched_map = null;
+
+        if (isset($mappings[$sector_value]) && is_array($mappings[$sector_value])) {
+            $matched_code = $sector_value;
+            $matched_map = $mappings[$sector_value];
+        } else {
+            $prefix = null;
+            if (preg_match('/^(\d+(?:\.\d+)*)/', $sector_value, $matches)) {
+                $prefix = $matches[1];
+            }
+
+            if ($prefix !== null) {
+                $parts = explode('.', $prefix);
+                while (!empty($parts)) {
+                    $candidate = implode('.', $parts);
+                    if (isset($mappings[$candidate]) && is_array($mappings[$candidate])) {
+                        $matched_code = $candidate;
+                        $matched_map = $mappings[$candidate];
+                        break;
+                    }
+                    array_pop($parts);
+                }
+            }
+        }
+
+        if ($matched_code === null || !is_array($matched_map)) {
+            return null;
+        }
+
+        $image_id = isset($matched_map['image_id']) ? absint($matched_map['image_id']) : 0;
+        $icon_id = isset($matched_map['icon_id']) ? absint($matched_map['icon_id']) : 0;
+
+        if (!$image_id && !$icon_id) {
+            return null;
+        }
+
+        $label = $sector_value;
+        if (preg_match('/^\d+(?:\.\d+)*\.?\s+(.+)$/', $sector_value, $label_match)) {
+            $label = $label_match[1];
+        }
+
+        return [
+            'code'      => $matched_code,
+            'label'     => $label,
+            'image_url' => $image_id ? wp_get_attachment_image_url($image_id, 'large') : '',
+            'icon_url'  => $icon_id ? wp_get_attachment_image_url($icon_id, 'thumbnail') : '',
+        ];
+    }
+
+    /**
      * Extracts, formats, and renders specific post meta key information into standardized HTML structures.
      * @param int $post_id Native identifier logic parameter extracting execution values definition schemas.
      * @param string $key Meta key identifier (excluding the preceding underscore).
@@ -1705,6 +1855,17 @@ class Quba_Render
         ob_start();
         $level = get_post_meta($post_id, '_level', true);
         $title = get_the_title($post_id);
+        $sector_meta_key = ($post_type === 'units') ? '_qcasector' : '_classification1';
+        $sector_value = get_post_meta($post_id, $sector_meta_key, true);
+        $sector_media = self::get_sector_media($sector_value);
+        $has_sector_image = is_array($sector_media) && !empty($sector_media['image_url']);
+        $show_sector_badge = is_array($sector_media) && !empty($sector_media['icon_url']);
+
+        $default_image = get_site_url() . '/wp-content/uploads/2023/10/logo-new.svg';
+        $card_image = $has_sector_image ? $sector_media['image_url'] : $default_image;
+        $image_alt = ($has_sector_image && !empty($sector_media['label']))
+            ? $sector_media['label']
+            : 'Logo';
 
         if (in_array($level, ['E1', 'E2', 'E3'])) {
             $level_val = str_replace('E', ' Entry Level ', $level);
@@ -1714,8 +1875,16 @@ class Quba_Render
     ?>
         <div class="col-lg-4 post-item">
             <div class="post-box h-100">
-                <div class="image-box image-box-placeholder">
-                    <img src="<?= get_site_url() ?>/wp-content/uploads/2023/10/logo-new.svg" alt="Logo">
+                <div class="image-box<?= $has_sector_image ? '' : ' image-box-placeholder' ?>">
+                    <img src="<?= esc_url($card_image) ?>" alt="<?= esc_attr($image_alt) ?>">
+                    <?php if ($show_sector_badge) : ?>
+                        <span class="sector-badge">
+                            <span class="sector-badge-icon">
+                                <img src="<?= esc_url($sector_media['icon_url']) ?>" alt="">
+                            </span>
+                            <span class="sector-badge-label"><?= esc_html($sector_media['label']) ?></span>
+                        </span>
+                    <?php endif; ?>
                     <span class="level <?= esc_attr($level) ?>">
                         <span class="level-badge">
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-check2" viewBox="0 0 16 16">
@@ -1832,8 +2001,8 @@ class Quba_Controllers
             is_post_type_archive('qualifications') || is_post_type_archive('units') ||
             is_singular('qualifications') || is_singular('units') || is_tax('qualifications_cat')
         ) {
-            wp_enqueue_style('quba-main-css', plugin_dir_url(__FILE__) . 'assets/css/main.css', [], '2.8.4', 'all');
-            wp_enqueue_script('quba-main-js', plugin_dir_url(__FILE__) . 'assets/js/main.js', ['jquery'], '2.8.4', true);
+            wp_enqueue_style('quba-main-css', plugin_dir_url(__FILE__) . 'assets/css/main.css', [], '2.8.5', 'all');
+            wp_enqueue_script('quba-main-js', plugin_dir_url(__FILE__) . 'assets/js/main.js', ['jquery'], '2.8.5', true);
             wp_localize_script('quba-main-js', 'qubaAjaxObj', [
                 'ajaxUrl' => admin_url('admin-ajax.php'),
                 'nonce'   => wp_create_nonce('quba_ajax_nonce')
