@@ -1152,7 +1152,7 @@ class Quba_Admin
 
             <div id="quba-sector-media-panel" style="background: #fff; padding: 20px; border: 1px solid #ccd0d4; margin-top: 20px; clear: both; max-width: 1100px;">
                 <h2 style="margin-top: 0;">Sector Card Media</h2>
-                <p class="description" style="margin-top: 0;">Assign a listing-card image and badge icon for each QCA sector. Cards use the mapped image as the hero and show the icon beside the sector name.</p>
+                <p class="description" style="margin-top: 0;">Assign a listing-card image and badge icon for each top-level QCA sector (e.g. Code 15). Subsectors such as 15.1 and 15.2 automatically inherit the parent sector’s media.</p>
 
                 <?php if (!$sectors_available) : ?>
                     <div class="notice notice-warning inline" style="margin: 10px 0 0;">
@@ -1169,7 +1169,11 @@ class Quba_Admin
                         </thead>
                         <tbody>
                             <?php foreach ($sectors as $sector) :
-                                $code = (string) $sector->Code;
+                                $code = trim((string) $sector->Code);
+                                // Only configure root sectors (e.g. "15"); decimal codes inherit via prefix match
+                                if ($code === '' || !preg_match('/^\d+$/', $code)) {
+                                    continue;
+                                }
                                 $classification = (string) $sector->Classification;
                                 $map = isset($sector_media[$code]) && is_array($sector_media[$code]) ? $sector_media[$code] : [];
                                 $image_id = isset($map['image_id']) ? absint($map['image_id']) : 0;
