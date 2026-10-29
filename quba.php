@@ -1162,7 +1162,7 @@ class Quba_Admin
 
             <div id="quba-sector-media-panel" style="background: #fff; padding: 20px; border: 1px solid #ccd0d4; margin-top: 20px; clear: both; max-width: 1100px;">
                 <h2 style="margin-top: 0;">Sector Card Media</h2>
-                <p class="description" style="margin-top: 0;">Assign a listing-card image and badge icon for each top-level QCA sector (e.g. Code 15). Subsectors such as 15.1 and 15.2 automatically inherit the parent sector’s media.</p>
+                <p class="description" style="margin-top: 0;">Assign a listing-card image and badge icon for each top-level QCA sector (e.g. Code 1). Subsectors such as 1.2 and 1.3 automatically inherit that parent’s media on the listing cards. Click <strong>Save Settings</strong> after choosing files.</p>
 
                 <?php if (!$sectors_available) : ?>
                     <div class="notice notice-warning inline" style="margin: 10px 0 0;">
