@@ -19,6 +19,24 @@
 
 .image-box {
     position: relative;
+    overflow: hidden;
+}
+
+.image-box .image-box-link {
+    display: block;
+    position: relative;
+    z-index: 0;
+}
+
+.image-box .image-box-link img {
+    display: block;
+    width: 100%;
+    transition: transform 0.45s ease;
+    transform: scale(1);
+}
+
+.image-box:hover .image-box-link img {
+    transform: scale(1.08);
 }
 
 .sector-badge {
@@ -175,6 +193,15 @@
     color: var(--opal-black);
 }
 
+#quba-grid-container .heading-box h4 a {
+    color: inherit;
+    text-decoration: none;
+}
+
+#quba-grid-container .heading-box h4 a:hover {
+    color: var(--high-violet, #5b2d8e);
+}
+
 #quba-grid-container .button-box-v2 a {
     position: relative;
     padding-right: 60px;
@@ -215,13 +242,18 @@
     }
     .image-box:not(.image-box-placeholder):before {
         content: "";
-  background: linear-gradient(180deg,rgba(0, 0, 0, 0) 43%, rgba(122, 66, 148, 0.78) 100%);
-
+        background: linear-gradient(180deg, rgba(0, 0, 0, 0) 43%, rgba(122, 66, 148, 0.78) 100%);
         position: absolute;
         left: 0;
         top: 0;
         right: 0;
         bottom: 0;
         z-index: 1;
+        pointer-events: none;
+    }
+
+    .image-box .level {
+        pointer-events: none;
+        z-index: 2;
     }
 }

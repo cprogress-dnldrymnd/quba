@@ -1945,11 +1945,16 @@ class Quba_Render
         } else {
             $level_val = str_replace('L', ' Level ', $level);
         }
+
+        $permalink = get_the_permalink($post_id);
+        $cta_label = $post_type == "units" ? "View Unit" : "View Course";
     ?>
         <div class="col-lg-4 post-item">
             <div class="post-box h-100">
                 <div class="image-box<?= $has_sector_image ? '' : ' image-box-placeholder' ?>">
-                    <img src="<?= esc_url($card_image) ?>" alt="<?= esc_attr($image_alt) ?>">
+                    <a class="image-box-link" href="<?= esc_url($permalink) ?>" aria-label="<?= esc_attr($title) ?>">
+                        <img src="<?= esc_url($card_image) ?>" alt="<?= esc_attr($image_alt) ?>">
+                    </a>
                     <?php if ($show_sector_badge) : ?>
                         <span class="sector-badge">
                             <span class="sector-badge-icon">
@@ -1969,14 +1974,14 @@ class Quba_Render
                 <div class="content-box content-box-v1">
                     <div class="heading-excerpt-box">
                         <div class="heading-box">
-                            <h4><?= esc_html($title) ?></h4>
+                            <h4><a href="<?= esc_url($permalink) ?>"><?= esc_html($title) ?></a></h4>
                         </div>
                     </div>
                 </div>
                 <div class="button-group-box row g-0 align-items-center">
                     <div class="button-box-v2 button-accent col">
-                        <a class="w-100 text-center" href="<?= esc_url(get_the_permalink($post_id)) ?>">
-                            <?= $post_type == "units" ? "View Unit" : "View Course" ?>
+                        <a class="w-100 text-center" href="<?= esc_url($permalink) ?>">
+                            <?= esc_html($cta_label) ?>
 
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-arrow-right" viewBox="0 0 16 16">
                                 <path fill-rule="evenodd" d="M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8" />
