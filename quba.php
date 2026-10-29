@@ -3,7 +3,7 @@
 /**
  * Plugin Name: Quba System Integration
  * Description: Integrates QUBA SOAP API, synchronizes units/qualifications via batched processes, and provides custom native templates & meta boxes. Includes persistent background sync logging.
- * Version: 2.8.9
+ * Version: 2.8.11
  * Author: Digitally Disruptive
  * Author URI: https://digitallydisruptive.co.uk/
  * Text Domain: quba-integration
@@ -947,11 +947,28 @@ class Quba_Admin
     {
         add_action('admin_menu', [__CLASS__, 'register_menu']);
         add_action('admin_enqueue_scripts', [__CLASS__, 'enqueue_admin_scripts']);
+        add_action('in_admin_header', [__CLASS__, 'suppress_admin_notices'], 1000);
 
         add_action('wp_ajax_quba_init_sync', [__CLASS__, 'ajax_init_sync']);
         add_action('wp_ajax_quba_process_batch', [__CLASS__, 'ajax_process_batch']);
         add_action('wp_ajax_quba_clear_logs', [__CLASS__, 'ajax_clear_logs']);
         add_action('wp_ajax_quba_save_settings', [__CLASS__, 'ajax_save_settings']);
+    }
+
+    /**
+     * Clears third-party admin notice callbacks on the QUBA Sync screen only.
+     */
+    public static function suppress_admin_notices()
+    {
+        $screen = function_exists('get_current_screen') ? get_current_screen() : null;
+        if (!$screen || $screen->id !== 'tools_page_quba-sync') {
+            return;
+        }
+
+        remove_all_actions('admin_notices');
+        remove_all_actions('all_admin_notices');
+        remove_all_actions('network_admin_notices');
+        remove_all_actions('user_admin_notices');
     }
 
     /**
@@ -978,8 +995,8 @@ class Quba_Admin
         if ($hook !== 'tools_page_quba-sync') return;
 
         wp_enqueue_media();
-        wp_enqueue_style('quba-admin-css', plugin_dir_url(__FILE__) . 'assets/css/admin.css', [], '2.8.9', 'all');
-        wp_enqueue_script('quba-admin-sync', plugin_dir_url(__FILE__) . 'assets/js/admin-sync.js', ['jquery'], '2.8.9', true);
+        wp_enqueue_style('quba-admin-css', plugin_dir_url(__FILE__) . 'assets/css/admin.css', [], '2.8.11', 'all');
+        wp_enqueue_script('quba-admin-sync', plugin_dir_url(__FILE__) . 'assets/js/admin-sync.js', ['jquery'], '2.8.11', true);
         wp_localize_script('quba-admin-sync', 'qubaAdminAjax', [
             'nonce' => wp_create_nonce('quba_admin_nonce')
         ]);
@@ -2150,8 +2167,8 @@ class Quba_Controllers
             is_post_type_archive('qualifications') || is_post_type_archive('units') ||
             is_singular('qualifications') || is_singular('units') || is_tax('qualifications_cat')
         ) {
-            wp_enqueue_style('quba-main-css', plugin_dir_url(__FILE__) . 'assets/css/main.css', [], '2.8.9', 'all');
-            wp_enqueue_script('quba-main-js', plugin_dir_url(__FILE__) . 'assets/js/main.js', ['jquery'], '2.8.9', true);
+            wp_enqueue_style('quba-main-css', plugin_dir_url(__FILE__) . 'assets/css/main.css', [], '2.8.11', 'all');
+            wp_enqueue_script('quba-main-js', plugin_dir_url(__FILE__) . 'assets/js/main.js', ['jquery'], '2.8.11', true);
             wp_localize_script('quba-main-js', 'qubaAjaxObj', [
                 'ajaxUrl' => admin_url('admin-ajax.php'),
                 'nonce'   => wp_create_nonce('quba_ajax_nonce')
