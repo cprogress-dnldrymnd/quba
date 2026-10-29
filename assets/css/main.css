@@ -189,3 +189,10 @@
     top: 50%;
     transform: translateY(-50%);
 }
+
+#quba-grid-container .level {
+    z-index: 9999;
+    position: absolute;
+    top: 10px;
+    left: 10px;
+}
