@@ -1930,18 +1930,13 @@ class Quba_Render
             return null;
         }
 
-        // Prefer the configured parent sector label (matches design); fall back to meta text
-        $label = '';
-        if (!empty($matched_map['label'])) {
-            $label = trim((string) $matched_map['label']);
-            // Strip leading "1. " / "1." from stored classification labels if present
-            $label = preg_replace('/^\d+(?:\.\d+)*\.?\s*/', '', $label);
-        }
-        if ($label === '') {
-            $label = $sector_value;
-            if (preg_match('/^\d+(?:\.\d+)*\.?\s+(.+)$/', $sector_value, $label_match)) {
-                $label = $label_match[1];
-            }
+        // Use the listing's own sector/subsector meta for the badge text
+        // (e.g. "2.1 Science" → "Science"), while image/icon still come from the parent mapping.
+        $label = $sector_value;
+        if (preg_match('/^\d+(?:\.\d+)*\.?\s+(.+)$/', $sector_value, $label_match)) {
+            $label = trim($label_match[1]);
+        } elseif (!empty($matched_map['label'])) {
+            $label = preg_replace('/^\d+(?:\.\d+)*\.?\s*/', '', trim((string) $matched_map['label']));
         }
 
         return [
