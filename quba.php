@@ -1219,6 +1219,94 @@ class Quba_Admin_Meta
         add_action('save_post', [__CLASS__, 'save_meta_boxes']);
         add_action('admin_enqueue_scripts', [__CLASS__, 'enqueue_scripts']);
         add_action('admin_footer', [__CLASS__, 'render_inline_js_css']);
+
+        add_filter('manage_qualifications_posts_columns', [__CLASS__, 'qualifications_columns']);
+        add_action('manage_qualifications_posts_custom_column', [__CLASS__, 'qualifications_custom_column'], 10, 2);
+        add_filter('manage_edit-qualifications_sortable_columns', [__CLASS__, 'qualifications_sortable_columns']);
+        add_action('pre_get_posts', [__CLASS__, 'qualifications_orderby_operational_start']);
+    }
+
+    /**
+     * Inserts Operational Start Date into the qualifications list table (before Date).
+     *
+     * @param array $columns Existing list-table columns.
+     * @return array
+     */
+    public static function qualifications_columns($columns)
+    {
+        $new = [];
+        foreach ($columns as $key => $label) {
+            if ($key === 'date') {
+                $new['operational_start_date'] = __('Operational Start Date', 'quba');
+            }
+            $new[$key] = $label;
+        }
+        if (!isset($new['operational_start_date'])) {
+            $new['operational_start_date'] = __('Operational Start Date', 'quba');
+        }
+        return $new;
+    }
+
+    /**
+     * Renders the Operational Start Date cell for a qualifications row.
+     *
+     * @param string $column  Column key.
+     * @param int    $post_id Post ID.
+     */
+    public static function qualifications_custom_column($column, $post_id)
+    {
+        if ($column !== 'operational_start_date') {
+            return;
+        }
+
+        $raw = get_post_meta($post_id, '_operationalstartdate', true);
+        if ($raw === '' || $raw === null) {
+            echo '—';
+            return;
+        }
+
+        $timestamp = strtotime($raw);
+        if ($timestamp) {
+            echo esc_html(date_i18n('Y/m/d', $timestamp));
+        } else {
+            echo esc_html(substr((string) $raw, 0, 10));
+        }
+    }
+
+    /**
+     * Marks Operational Start Date as a sortable list-table column.
+     *
+     * @param array $columns Sortable columns map.
+     * @return array
+     */
+    public static function qualifications_sortable_columns($columns)
+    {
+        $columns['operational_start_date'] = 'operational_start_date';
+        return $columns;
+    }
+
+    /**
+     * Applies meta_value ordering when sorting by Operational Start Date.
+     * ISO-8601 values (YYYY-MM-DD…) sort correctly as strings.
+     *
+     * @param WP_Query $query Main admin query.
+     */
+    public static function qualifications_orderby_operational_start($query)
+    {
+        if (!is_admin() || !$query->is_main_query()) {
+            return;
+        }
+
+        if ($query->get('post_type') !== 'qualifications') {
+            return;
+        }
+
+        if ($query->get('orderby') !== 'operational_start_date') {
+            return;
+        }
+
+        $query->set('meta_key', '_operationalstartdate');
+        $query->set('orderby', 'meta_value');
     }
 
     /**
@@ -1819,8 +1907,50 @@ class Quba_Controllers
 
         add_shortcode('related_qualifications', [__CLASS__, 'shortcode_related_qualifications']);
         add_shortcode('related_units', [__CLASS__, 'shortcode_related_units']);
+        add_shortcode('coming_soon_qualifications', [__CLASS__, 'shortcode_coming_soon_qualifications']);
+
+        add_action('vc_before_init', [__CLASS__, 'register_vc_elements']);
 
         add_filter('template_include', [__CLASS__, 'route_templates'], 99);
+    }
+
+    /**
+     * Registers WP Bakery content elements when Visual Composer is available.
+     */
+    public static function register_vc_elements()
+    {
+        if (!function_exists('vc_map')) {
+            return;
+        }
+
+        vc_map([
+            'name'        => __('Coming Soon Qualifications', 'quba'),
+            'base'        => 'coming_soon_qualifications',
+            'category'    => __('Quba', 'quba'),
+            'description' => __('Lists qualifications whose Operational Start Date falls within a future day window.', 'quba'),
+            'icon'        => 'icon-wpb-application-icon-large',
+            'params'      => [
+                [
+                    'type'        => 'textfield',
+                    'heading'     => __('Days ahead', 'quba'),
+                    'param_name'  => 'days',
+                    'value'       => '90',
+                    'admin_label' => true,
+                    'description' => __('Show qualifications with an Operational Start Date from tomorrow through today plus this many days (1–365).', 'quba'),
+                ],
+                [
+                    'type'        => 'dropdown',
+                    'heading'     => __('Show results count', 'quba'),
+                    'param_name'  => 'show_count',
+                    'value'       => [
+                        __('Yes', 'quba') => 'yes',
+                        __('No', 'quba')  => 'no',
+                    ],
+                    'std'         => 'yes',
+                    'description' => __('Display the "X Qualifications Found" summary above the grid.', 'quba'),
+                ],
+            ],
+        ]);
     }
 
     /**
@@ -1828,11 +1958,17 @@ class Quba_Controllers
      */
     public static function enqueue_assets()
     {
-        if (
-            is_post_type_archive('qualifications') || is_post_type_archive('units') ||
-            is_singular('qualifications') || is_singular('units') || is_tax('qualifications_cat')
-        ) {
+        $is_quba_listing = is_post_type_archive('qualifications') || is_post_type_archive('units')
+            || is_singular('qualifications') || is_singular('units') || is_tax('qualifications_cat');
+
+        $post = get_post();
+        $has_coming_soon = is_singular() && $post && has_shortcode($post->post_content, 'coming_soon_qualifications');
+
+        if ($is_quba_listing || $has_coming_soon) {
             wp_enqueue_style('quba-main-css', plugin_dir_url(__FILE__) . 'assets/css/main.css', [], '2.8.4', 'all');
+        }
+
+        if ($is_quba_listing) {
             wp_enqueue_script('quba-main-js', plugin_dir_url(__FILE__) . 'assets/js/main.js', ['jquery'], '2.8.4', true);
             wp_localize_script('quba-main-js', 'qubaAjaxObj', [
                 'ajaxUrl' => admin_url('admin-ajax.php'),
@@ -2225,6 +2361,101 @@ class Quba_Controllers
             echo Quba_Render::unit_grid($post->ID, 'units');
         }
         echo '</div>';
+        return ob_get_clean();
+    }
+
+    /**
+     * Renders qualifications whose Operational Start Date falls in a future window.
+     * Used by the WP Bakery "Coming Soon Qualifications" element.
+     *
+     * Meta dates are stored as ISO-8601 (e.g. 2026-09-01T00:00:00+01:00), so bounds
+     * use CHAR prefix compares against Y-m-d rather than CAST AS DATE.
+     *
+     * @param array|string $atts Shortcode attributes (days, show_count).
+     * @return string HTML grid of coming-soon qualification cards.
+     */
+    public static function shortcode_coming_soon_qualifications($atts = [])
+    {
+        $atts = shortcode_atts([
+            'days'       => '90',
+            'show_count' => 'yes',
+        ], $atts, 'coming_soon_qualifications');
+
+        $days = intval($atts['days']);
+        if ($days < 1 || $days > 365) {
+            $days = 90;
+        }
+
+        $today = current_time('Y-m-d');
+        $tomorrow = date('Y-m-d', strtotime($today . ' +1 day'));
+        $until = date('Y-m-d', strtotime($today . ' +' . $days . ' days'));
+        $until_exclusive = date('Y-m-d', strtotime($until . ' +1 day'));
+
+        $args = [
+            'post_type'      => 'qualifications',
+            'posts_per_page' => -1,
+            'post_status'    => 'publish',
+            'meta_key'       => '_operationalstartdate',
+            'orderby'        => 'meta_value',
+            'order'          => 'ASC',
+            'meta_query'     => [
+                'relation' => 'AND',
+                [
+                    'key'     => '_operationalstartdate',
+                    'value'   => $tomorrow,
+                    'compare' => '>=',
+                    'type'    => 'CHAR',
+                ],
+                [
+                    'key'     => '_operationalstartdate',
+                    'value'   => $until_exclusive,
+                    'compare' => '<',
+                    'type'    => 'CHAR',
+                ],
+                [
+                    'relation' => 'OR',
+                    [
+                        'key'     => '_regulationenddate',
+                        'value'   => $today,
+                        'compare' => '>=',
+                        'type'    => 'CHAR',
+                    ],
+                    [
+                        'key'     => '_regulationenddate',
+                        'compare' => 'NOT EXISTS',
+                    ],
+                    [
+                        'key'     => '_regulationenddate',
+                        'value'   => '',
+                        'compare' => '=',
+                    ],
+                ],
+            ],
+        ];
+
+        $query = new WP_Query($args);
+
+        ob_start();
+
+        if ($query->have_posts()) {
+            if ($atts['show_count'] === 'yes') {
+                echo '<div class="search-results-summary mb-4"><div class="results-count-display">';
+                echo '<span class="results-number">' . number_format($query->found_posts) . '</span>';
+                echo '<span class="results-text"> Qualification' . ($query->found_posts !== 1 ? 's' : '') . ' Found</span>';
+                echo '</div></div>';
+            }
+
+            echo '<div class="row row-results g-5" id="quba-coming-soon-grid">';
+            while ($query->have_posts()) {
+                $query->the_post();
+                echo Quba_Render::qual_grid(get_the_ID(), 'qualifications');
+            }
+            echo '</div>';
+            wp_reset_postdata();
+        } else {
+            echo '<div class="no-results-message"><p>No coming soon qualifications found.</p></div>';
+        }
+
         return ob_get_clean();
     }
 }
