@@ -1955,7 +1955,7 @@ class Quba_Render
                             <span class="sector-badge-icon">
                                 <img src="<?= esc_url($sector_media['icon_url']) ?>" alt="">
                             </span>
-                            <span class="sector-badge-label"><?= esc_html($sector_media['label']) ?></span>
+                            <span class="sector-badge-label"><span><?= esc_html($sector_media['label']) ?></span></span>
                         </span>
                     <?php endif; ?>
                     <span class="level <?= esc_attr($level) ?>">
