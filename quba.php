@@ -1948,7 +1948,7 @@ class Quba_Render
     ?>
         <div class="col-lg-4 post-item">
             <div class="post-box h-100">
-                <div class="image-box<?= $has_sector_image ? '' : ' image-box-placeholder' ?> image-box-placeholder">
+                <div class="image-box<?= $has_sector_image ? '' : ' image-box-placeholder' ?>">
                     <img src="<?= esc_url($card_image) ?>" alt="<?= esc_attr($image_alt) ?>">
                     <?php if ($show_sector_badge) : ?>
                         <span class="sector-badge">
