@@ -190,7 +190,6 @@
     transform: translateY(-50%);
 }
 
-
 #quba-grid-container {
     .image-box.image-box.image-box.image-box .level {
         position: absolute;
@@ -213,5 +212,16 @@
     .image-box.image-box.image-box.image-box .level.L4,
     .image-box.image-box.image-box.image-box .level.L5 {
         background-color: var(--sun-orange);
+    }
+    .image-box:not(.image-box-placeholder):before {
+        content: "";
+  background: linear-gradient(180deg,rgba(0, 0, 0, 0) 43%, rgba(122, 66, 148, 0.78) 100%);
+
+        position: absolute;
+        left: 0;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 1;
     }
 }
