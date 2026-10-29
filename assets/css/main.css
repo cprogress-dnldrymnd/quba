@@ -24,7 +24,7 @@
 
 .image-box .image-box-link {
     display: block;
-    position: relative;
+    position: static;
     z-index: 0;
 }
 
