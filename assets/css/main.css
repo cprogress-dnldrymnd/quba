@@ -170,3 +170,7 @@
         margin-bottom: 10px;
     }
 }
+
+#quba-grid-container .heading-box h4 {
+    color: var(--opal-black);
+}
