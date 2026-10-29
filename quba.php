@@ -3,7 +3,7 @@
 /**
  * Plugin Name: Quba System Integration
  * Description: Integrates QUBA SOAP API, synchronizes units/qualifications via batched processes, and provides custom native templates & meta boxes. Includes persistent background sync logging.
- * Version: 2.8.8
+ * Version: 2.8.9
  * Author: Digitally Disruptive
  * Author URI: https://digitallydisruptive.co.uk/
  * Text Domain: quba-integration
@@ -978,8 +978,8 @@ class Quba_Admin
         if ($hook !== 'tools_page_quba-sync') return;
 
         wp_enqueue_media();
-        wp_enqueue_style('quba-admin-css', plugin_dir_url(__FILE__) . 'assets/css/admin.css', [], '2.8.8', 'all');
-        wp_enqueue_script('quba-admin-sync', plugin_dir_url(__FILE__) . 'assets/js/admin-sync.js', ['jquery'], '2.8.8', true);
+        wp_enqueue_style('quba-admin-css', plugin_dir_url(__FILE__) . 'assets/css/admin.css', [], '2.8.9', 'all');
+        wp_enqueue_script('quba-admin-sync', plugin_dir_url(__FILE__) . 'assets/js/admin-sync.js', ['jquery'], '2.8.9', true);
         wp_localize_script('quba-admin-sync', 'qubaAdminAjax', [
             'nonce' => wp_create_nonce('quba_admin_nonce')
         ]);
@@ -1076,11 +1076,15 @@ class Quba_Admin
         }
 
 ?>
-        <div class="wrap quba-admin">
+        <div class="wrap">
+            <?php // Keep h1 as the first heading in .wrap so WP admin notices are not injected into the hero. ?>
+            <h1 class="quba-admin-page-title">QUBA Sync</h1>
+
+            <div class="quba-admin">
             <div class="quba-admin-hero">
                 <div>
-                    <h1>QUBA Sync</h1>
-                    <p>Run manual synchronizations, manage cron notifications, and configure sector card images used across the qualifications listing grid.</p>
+                    <p class="quba-admin-hero-title">Sync control center</p>
+                    <p class="quba-admin-hero-lead">Run manual synchronizations, manage cron notifications, and configure sector card images used across the qualifications listing grid.</p>
                 </div>
                 <div class="quba-admin-hero-badge">
                     <?= $sectors_available ? esc_html($root_sector_count . ' root sectors') : 'Sectors offline' ?>
@@ -1301,6 +1305,7 @@ class Quba_Admin
                     </div>
                 <?php endif; ?>
             </section>
+            </div>
         </div>
     <?php
     }
@@ -2150,8 +2155,8 @@ class Quba_Controllers
             is_post_type_archive('qualifications') || is_post_type_archive('units') ||
             is_singular('qualifications') || is_singular('units') || is_tax('qualifications_cat')
         ) {
-            wp_enqueue_style('quba-main-css', plugin_dir_url(__FILE__) . 'assets/css/main.css', [], '2.8.8', 'all');
-            wp_enqueue_script('quba-main-js', plugin_dir_url(__FILE__) . 'assets/js/main.js', ['jquery'], '2.8.8', true);
+            wp_enqueue_style('quba-main-css', plugin_dir_url(__FILE__) . 'assets/css/main.css', [], '2.8.9', 'all');
+            wp_enqueue_script('quba-main-js', plugin_dir_url(__FILE__) . 'assets/js/main.js', ['jquery'], '2.8.9', true);
             wp_localize_script('quba-main-js', 'qubaAjaxObj', [
                 'ajaxUrl' => admin_url('admin-ajax.php'),
                 'nonce'   => wp_create_nonce('quba_ajax_nonce')
