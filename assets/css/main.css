@@ -190,9 +190,28 @@
     transform: translateY(-50%);
 }
 
-#quba-grid-container .level {
-    z-index: 9999;
-    position: absolute;
-    top: 10px;
-    left: 10px;
+
+#quba-grid-container {
+    .image-box.image-box.image-box.image-box .level {
+        position: absolute;
+        left: 10px;
+        top: 10px;
+        padding: 10px 20px;
+        border-radius: 36px;
+        line-height: 1;
+        color: var(--white-color);
+        font-size: 16px;
+    }
+    .image-box.image-box.image-box.image-box .level.E1,
+    .image-box.image-box.image-box.image-box .level.E2,
+    .image-box.image-box.image-box.image-box .level.E3 {
+        background-color: var(--purple-heather);
+    }
+    .image-box.image-box.image-box.image-box .level.L1,
+    .image-box.image-box.image-box.image-box .level.L2,
+    .image-box.image-box.image-box.image-box .level.L3,
+    .image-box.image-box.image-box.image-box .level.L4,
+    .image-box.image-box.image-box.image-box .level.L5 {
+        background-color: var(--sun-orange);
+    }
 }
