@@ -983,7 +983,7 @@ class Quba_Admin
             'nonce' => wp_create_nonce('quba_admin_nonce')
         ]);
     }
-/**
+    /**
      * Parses and securely commits configured option parameters directly to the database layer context block.
      * Evaluates permission boundaries to ensure strict administrative origin payloads.
      */
@@ -1116,7 +1116,7 @@ class Quba_Admin
 
                 <div style="margin-bottom: 15px;">
                     <label for="quba_notification_email" style="display: block; font-size: 14px; margin-bottom: 5px;"><strong>Recipient Email Address:</strong></label>
-                  <input type="email" id="quba_notification_email" value="<?= esc_attr($current_email) ?>" placeholder="e.g. admin@domain.com" style="width: 100%; max-width: 400px;">
+                    <input type="email" id="quba_notification_email" value="<?= esc_attr($current_email) ?>" placeholder="e.g. admin@domain.com" style="width: 100%; max-width: 400px;">
                 </div>
 
                 <hr style="border-top: 1px solid #ddd; margin: 15px 0;">
@@ -1190,7 +1190,7 @@ class Quba_Admin
                                 $icon_id = isset($map['icon_id']) ? absint($map['icon_id']) : 0;
                                 $image_url = $image_id ? wp_get_attachment_image_url($image_id, 'medium') : '';
                                 $icon_url = $icon_id ? wp_get_attachment_image_url($icon_id, 'thumbnail') : '';
-                                ?>
+                            ?>
                                 <tr class="quba-sector-media-row" data-code="<?= esc_attr($code) ?>" data-label="<?= esc_attr($classification) ?>">
                                     <td>
                                         <strong><?= esc_html($classification) ?></strong>
@@ -1977,6 +1977,10 @@ class Quba_Render
                     <div class="button-box-v2 button-accent col">
                         <a class="w-100 text-center" href="<?= esc_url(get_the_permalink($post_id)) ?>">
                             <?= $post_type == "units" ? "View Unit" : "View Course" ?>
+
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-arrow-right" viewBox="0 0 16 16">
+                                <path fill-rule="evenodd" d="M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8" />
+                            </svg>
                         </a>
                     </div>
                 </div>

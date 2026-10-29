@@ -174,3 +174,18 @@
 #quba-grid-container .heading-box h4 {
     color: var(--opal-black);
 }
+
+#quba-grid-container .button-box-v2 a {
+    position: relative;
+    padding-right: 60px;
+    padding-left: 60px;
+}
+
+#quba-grid-container .button-box-v2 a svg {
+    position: absolute;
+    right: 23px;
+    width: 23px;
+    height: 23px;
+    top: 50%;
+    transform: translateY(-50%);
+}
