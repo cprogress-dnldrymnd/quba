@@ -107,6 +107,7 @@ jQuery(document).ready(function ($) {
 
     /**
      * Collect sector card media attachment IDs from the admin table.
+     * Uses attr() for data-code so values like "1" stay strings (jQuery .data() coerces to numbers).
      */
     function collectSectorMedia() {
         var sectorMedia = {};
@@ -117,10 +118,14 @@ jQuery(document).ready(function ($) {
         }
 
         $rows.each(function () {
-            var code = String($(this).data('code'));
+            var code = String($(this).attr('data-code') || '').trim();
+            if (!code) {
+                return;
+            }
             sectorMedia[code] = {
                 image_id: parseInt($(this).find('.quba-sector-image-id').val(), 10) || 0,
-                icon_id: parseInt($(this).find('.quba-sector-icon-id').val(), 10) || 0
+                icon_id: parseInt($(this).find('.quba-sector-icon-id').val(), 10) || 0,
+                label: String($(this).attr('data-label') || '').trim()
             };
         });
 
@@ -141,8 +146,10 @@ jQuery(document).ready(function ($) {
         };
         var sectorMedia = collectSectorMedia();
 
+        // Send both nested fields and JSON so saves survive hosts that alter one or the other
         if (sectorMedia !== null) {
-            payload.sector_media = JSON.stringify(sectorMedia);
+            payload.sector_media = sectorMedia;
+            payload.sector_media_json = JSON.stringify(sectorMedia);
         }
 
         $buttons.prop('disabled', true);
@@ -152,9 +159,12 @@ jQuery(document).ready(function ($) {
             $buttons.prop('disabled', false).text('Save Settings');
             if (res.success) {
                 $status.fadeIn().delay(2000).fadeOut();
+            } else {
+                window.alert('Unable to save settings. Please try again.');
             }
         }).fail(function () {
             $buttons.prop('disabled', false).text('Save Settings');
+            window.alert('Unable to save settings. Please try again.');
         });
     }
 

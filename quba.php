@@ -3,7 +3,7 @@
 /**
  * Plugin Name: Quba System Integration
  * Description: Integrates QUBA SOAP API, synchronizes units/qualifications via batched processes, and provides custom native templates & meta boxes. Includes persistent background sync logging.
- * Version: 2.8.5
+ * Version: 2.8.6
  * Author: Digitally Disruptive
  * Author URI: https://digitallydisruptive.co.uk/
  * Text Domain: quba-integration
@@ -978,7 +978,7 @@ class Quba_Admin
         if ($hook !== 'tools_page_quba-sync') return;
 
         wp_enqueue_media();
-        wp_enqueue_script('quba-admin-sync', plugin_dir_url(__FILE__) . 'assets/js/admin-sync.js', ['jquery'], '2.8.5', true);
+        wp_enqueue_script('quba-admin-sync', plugin_dir_url(__FILE__) . 'assets/js/admin-sync.js', ['jquery'], '2.8.6', true);
         wp_localize_script('quba-admin-sync', 'qubaAdminAjax', [
             'nonce' => wp_create_nonce('quba_admin_nonce')
         ]);
@@ -1005,8 +1005,14 @@ class Quba_Admin
         update_option('quba_hide_debug_info', $hide_debug ? '1' : '0');
 
         // Persist per-sector card image / badge icon attachment mappings when provided
+        $raw_sector_media = null;
         if (isset($_POST['sector_media'])) {
             $raw_sector_media = wp_unslash($_POST['sector_media']);
+        } elseif (isset($_POST['sector_media_json'])) {
+            $raw_sector_media = wp_unslash($_POST['sector_media_json']);
+        }
+
+        if ($raw_sector_media !== null) {
             if (is_string($raw_sector_media)) {
                 $decoded = json_decode($raw_sector_media, true);
                 $raw_sector_media = is_array($decoded) ? $decoded : [];
@@ -1016,16 +1022,20 @@ class Quba_Admin
             if (is_array($raw_sector_media)) {
                 foreach ($raw_sector_media as $code => $map) {
                     $code_key = sanitize_text_field((string) $code);
-                    if ($code_key === '' || !is_array($map)) {
+                    // Persist root sector codes only; decimal subsectors inherit from the parent
+                    if ($code_key === '' || !preg_match('/^\d+$/', $code_key) || !is_array($map)) {
                         continue;
                     }
                     $sanitized[$code_key] = [
                         'image_id' => isset($map['image_id']) ? absint($map['image_id']) : 0,
                         'icon_id'  => isset($map['icon_id']) ? absint($map['icon_id']) : 0,
+                        'label'    => isset($map['label']) ? sanitize_text_field($map['label']) : '',
                     ];
                 }
             }
-            update_option('quba_sector_media', $sanitized);
+            update_option('quba_sector_media', $sanitized, false);
+            wp_send_json_success(['saved_sectors' => count($sanitized)]);
+            return;
         }
 
         wp_send_json_success();
@@ -1181,7 +1191,7 @@ class Quba_Admin
                                 $image_url = $image_id ? wp_get_attachment_image_url($image_id, 'medium') : '';
                                 $icon_url = $icon_id ? wp_get_attachment_image_url($icon_id, 'thumbnail') : '';
                                 ?>
-                                <tr class="quba-sector-media-row" data-code="<?= esc_attr($code) ?>">
+                                <tr class="quba-sector-media-row" data-code="<?= esc_attr($code) ?>" data-label="<?= esc_attr($classification) ?>">
                                     <td>
                                         <strong><?= esc_html($classification) ?></strong>
                                         <div style="color:#646970; font-size:12px; margin-top:4px;">Code: <?= esc_html($code) ?></div>
@@ -1743,16 +1753,65 @@ class Quba_Admin_Meta
 class Quba_Render
 {
     /**
+     * Returns a usable public URL for an attachment (handles SVGs without image sizes).
+     *
+     * @param int    $attachment_id Attachment ID.
+     * @param string $size          Preferred image size when intermediate sizes exist.
+     * @return string
+     */
+    public static function get_attachment_src($attachment_id, $size = 'large')
+    {
+        $attachment_id = absint($attachment_id);
+        if (!$attachment_id) {
+            return '';
+        }
+
+        $url = wp_get_attachment_image_url($attachment_id, $size);
+        if (!$url) {
+            $url = wp_get_attachment_url($attachment_id);
+        }
+
+        return $url ? (string) $url : '';
+    }
+
+    /**
+     * Normalizes stored sector media option keys to digit strings for reliable lookups.
+     *
+     * @return array<string, array{image_id:int, icon_id:int, label?:string}>
+     */
+    public static function get_sector_media_mappings()
+    {
+        $mappings = get_option('quba_sector_media', []);
+        if (!is_array($mappings)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($mappings as $code => $map) {
+            if (!is_array($map)) {
+                continue;
+            }
+            $code_key = trim((string) $code);
+            if ($code_key === '' || !preg_match('/^\d+$/', $code_key)) {
+                continue;
+            }
+            $normalized[$code_key] = $map;
+        }
+
+        return $normalized;
+    }
+
+    /**
      * Resolves a listing's sector meta value to configured card image / badge icon URLs.
      * Matches by exact Code, then walks numeric prefixes (e.g. 1.2.3 → 1.2 → 1).
      *
-     * @param string $sector_value Raw sector meta (e.g. "14. History, Philosophy and Theology").
+     * @param string $sector_value Raw sector meta (e.g. "1.3 Health and Social Care").
      * @return array|null { image_url, icon_url, label, code } or null when nothing configured.
      */
     public static function get_sector_media($sector_value)
     {
-        $mappings = get_option('quba_sector_media', []);
-        if (!is_array($mappings) || $sector_value === null || $sector_value === '') {
+        $mappings = self::get_sector_media_mappings();
+        if (empty($mappings) || $sector_value === null || $sector_value === '') {
             return null;
         }
 
@@ -1769,6 +1828,7 @@ class Quba_Render
             $matched_map = $mappings[$sector_value];
         } else {
             $prefix = null;
+            // "1.3 Health and Social Care" → 1.3; also accepts "1. Health..."
             if (preg_match('/^(\d+(?:\.\d+)*)/', $sector_value, $matches)) {
                 $prefix = $matches[1];
             }
@@ -1798,16 +1858,25 @@ class Quba_Render
             return null;
         }
 
-        $label = $sector_value;
-        if (preg_match('/^\d+(?:\.\d+)*\.?\s+(.+)$/', $sector_value, $label_match)) {
-            $label = $label_match[1];
+        // Prefer the configured parent sector label (matches design); fall back to meta text
+        $label = '';
+        if (!empty($matched_map['label'])) {
+            $label = trim((string) $matched_map['label']);
+            // Strip leading "1. " / "1." from stored classification labels if present
+            $label = preg_replace('/^\d+(?:\.\d+)*\.?\s*/', '', $label);
+        }
+        if ($label === '') {
+            $label = $sector_value;
+            if (preg_match('/^\d+(?:\.\d+)*\.?\s+(.+)$/', $sector_value, $label_match)) {
+                $label = $label_match[1];
+            }
         }
 
         return [
             'code'      => $matched_code,
             'label'     => $label,
-            'image_url' => $image_id ? wp_get_attachment_image_url($image_id, 'large') : '',
-            'icon_url'  => $icon_id ? wp_get_attachment_image_url($icon_id, 'thumbnail') : '',
+            'image_url' => self::get_attachment_src($image_id, 'large'),
+            'icon_url'  => self::get_attachment_src($icon_id, 'thumbnail'),
         ];
     }
 
@@ -2005,8 +2074,8 @@ class Quba_Controllers
             is_post_type_archive('qualifications') || is_post_type_archive('units') ||
             is_singular('qualifications') || is_singular('units') || is_tax('qualifications_cat')
         ) {
-            wp_enqueue_style('quba-main-css', plugin_dir_url(__FILE__) . 'assets/css/main.css', [], '2.8.5', 'all');
-            wp_enqueue_script('quba-main-js', plugin_dir_url(__FILE__) . 'assets/js/main.js', ['jquery'], '2.8.5', true);
+            wp_enqueue_style('quba-main-css', plugin_dir_url(__FILE__) . 'assets/css/main.css', [], '2.8.6', 'all');
+            wp_enqueue_script('quba-main-js', plugin_dir_url(__FILE__) . 'assets/js/main.js', ['jquery'], '2.8.6', true);
             wp_localize_script('quba-main-js', 'qubaAjaxObj', [
                 'ajaxUrl' => admin_url('admin-ajax.php'),
                 'nonce'   => wp_create_nonce('quba_ajax_nonce')
