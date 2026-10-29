@@ -1,0 +1,579 @@
+/* QUBA Sync admin — Tools → QUBA Sync */
+
+.quba-admin {
+    --quba-bg: #f3f5f8;
+    --quba-surface: #ffffff;
+    --quba-border: #e2e8f0;
+    --quba-border-strong: #cbd5e1;
+    --quba-text: #0f172a;
+    --quba-muted: #64748b;
+    --quba-accent: #5b2d8e;
+    --quba-accent-soft: #f3eafb;
+    --quba-accent-hover: #4a2474;
+    --quba-success: #15803d;
+    --quba-success-soft: #dcfce7;
+    --quba-warning: #b45309;
+    --quba-warning-soft: #fef3c7;
+    --quba-radius: 14px;
+    --quba-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.04);
+    max-width: 1180px;
+    margin: 20px 20px 40px 0;
+    color: var(--quba-text);
+}
+
+.quba-admin *,
+.quba-admin *::before,
+.quba-admin *::after {
+    box-sizing: border-box;
+}
+
+.quba-admin-hero {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
+    margin-bottom: 24px;
+    padding: 28px 28px 26px;
+    border-radius: calc(var(--quba-radius) + 4px);
+    background:
+        radial-gradient(ellipse 80% 120% at 100% 0%, rgba(91, 45, 142, 0.18), transparent 55%),
+        linear-gradient(135deg, #1e1233 0%, #3b1d5c 48%, #5b2d8e 100%);
+    color: #fff;
+    box-shadow: var(--quba-shadow);
+}
+
+.quba-admin-hero h1 {
+    margin: 0 0 8px;
+    padding: 0;
+    color: #fff;
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+}
+
+.quba-admin-hero p {
+    margin: 0;
+    max-width: 54ch;
+    color: rgba(255, 255, 255, 0.82);
+    font-size: 14px;
+    line-height: 1.55;
+}
+
+.quba-admin-hero-badge {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+}
+
+.quba-admin-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.quba-admin-grid-wide {
+    grid-template-columns: 1fr;
+}
+
+.quba-card {
+    background: var(--quba-surface);
+    border: 1px solid var(--quba-border);
+    border-radius: var(--quba-radius);
+    box-shadow: var(--quba-shadow);
+    overflow: hidden;
+}
+
+.quba-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 20px 22px 0;
+}
+
+.quba-card-header h2 {
+    margin: 0 0 6px;
+    padding: 0;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--quba-text);
+    letter-spacing: -0.01em;
+}
+
+.quba-card-header p,
+.quba-card-body > .description,
+.quba-help {
+    margin: 0;
+    color: var(--quba-muted);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.quba-card-body {
+    padding: 18px 22px 22px;
+}
+
+.quba-section + .quba-section {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid var(--quba-border);
+}
+
+.quba-section-label {
+    display: block;
+    margin: 0 0 10px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--quba-muted);
+}
+
+.quba-choice-grid {
+    display: grid;
+    gap: 10px;
+}
+
+.quba-choice {
+    position: relative;
+    display: block;
+    margin: 0;
+    cursor: pointer;
+}
+
+.quba-choice input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.quba-choice-ui {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--quba-border);
+    border-radius: 12px;
+    background: #f8fafc;
+    transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.quba-choice-ui::before {
+    content: "";
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid var(--quba-border-strong);
+    background: #fff;
+    flex-shrink: 0;
+    box-shadow: inset 0 0 0 3px transparent;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.quba-choice-copy strong {
+    display: block;
+    font-size: 13px;
+    color: var(--quba-text);
+}
+
+.quba-choice-copy span {
+    display: block;
+    margin-top: 2px;
+    font-size: 12px;
+    color: var(--quba-muted);
+}
+
+.quba-choice input:checked + .quba-choice-ui {
+    border-color: var(--quba-accent);
+    background: var(--quba-accent-soft);
+    box-shadow: 0 0 0 3px rgba(91, 45, 142, 0.12);
+}
+
+.quba-choice input:checked + .quba-choice-ui::before {
+    border-color: var(--quba-accent);
+    box-shadow: inset 0 0 0 4px var(--quba-accent);
+}
+
+.quba-choice:hover .quba-choice-ui {
+    border-color: #b6c2d1;
+}
+
+.quba-field {
+    margin: 0;
+}
+
+.quba-field + .quba-field,
+.quba-field + .quba-check,
+.quba-check + .quba-field {
+    margin-top: 14px;
+}
+
+.quba-field label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--quba-text);
+}
+
+.quba-input {
+    width: 100%;
+    max-width: 100%;
+    height: 40px;
+    padding: 0 12px;
+    border: 1px solid var(--quba-border-strong);
+    border-radius: 10px;
+    background: #fff;
+    color: var(--quba-text);
+    font-size: 13px;
+    line-height: 40px;
+    box-shadow: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.quba-input:focus {
+    border-color: var(--quba-accent);
+    box-shadow: 0 0 0 3px rgba(91, 45, 142, 0.14);
+    outline: none;
+}
+
+.quba-check {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 12px 0 0;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: #f8fafc;
+    border: 1px solid var(--quba-border);
+}
+
+.quba-check input {
+    margin: 2px 0 0;
+}
+
+.quba-check span {
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--quba-text);
+}
+
+.quba-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin-top: 18px;
+}
+
+.quba-btn {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 40px;
+    padding: 0 16px;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.quba-btn:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+
+.quba-btn-primary {
+    background: var(--quba-accent);
+    color: #fff;
+    box-shadow: 0 1px 2px rgba(91, 45, 142, 0.25);
+}
+
+.quba-btn-primary:hover:not(:disabled) {
+    background: var(--quba-accent-hover);
+    color: #fff;
+}
+
+.quba-btn-secondary {
+    background: #fff;
+    color: var(--quba-text);
+    border-color: var(--quba-border-strong);
+}
+
+.quba-btn-secondary:hover:not(:disabled) {
+    background: #f8fafc;
+    border-color: #94a3b8;
+    color: var(--quba-text);
+}
+
+.quba-btn-ghost {
+    background: transparent;
+    color: var(--quba-muted);
+    border-color: var(--quba-border);
+}
+
+.quba-btn-ghost:hover:not(:disabled) {
+    background: #f8fafc;
+    color: var(--quba-text);
+}
+
+.quba-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: var(--quba-muted);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.quba-status-pill.is-success {
+    background: var(--quba-success-soft);
+    color: var(--quba-success);
+}
+
+.quba-status-pill.is-running {
+    background: var(--quba-accent-soft);
+    color: var(--quba-accent);
+}
+
+.quba-progress {
+    margin-top: 16px;
+    height: 12px;
+    border-radius: 999px;
+    background: #e2e8f0;
+    overflow: hidden;
+}
+
+.quba-progress-bar {
+    height: 100%;
+    width: 0%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #7c3aed, #5b2d8e);
+    color: transparent;
+    font-size: 0;
+    line-height: 0;
+    transition: width 0.3s ease;
+}
+
+.quba-progress-meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--quba-muted);
+}
+
+.quba-debug-panel {
+    display: none;
+    margin-top: 18px;
+    padding: 14px;
+    border-radius: 12px;
+    border: 1px solid #f0d48a;
+    background: #fffbeb;
+}
+
+.quba-debug-panel h3 {
+    margin: 0 0 6px;
+    font-size: 13px;
+    color: var(--quba-warning);
+}
+
+.quba-debug-panel p {
+    margin: 0 0 10px;
+    font-size: 12px;
+    color: #92400e;
+}
+
+.quba-debug-panel pre {
+    margin: 0;
+    max-height: 320px;
+    overflow: auto;
+    padding: 12px;
+    border-radius: 10px;
+    background: #1e293b;
+    color: #e2e8f0;
+    font-size: 11px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.quba-log-viewer {
+    width: 100%;
+    height: 320px;
+    margin: 0;
+    padding: 14px;
+    border: 1px solid var(--quba-border);
+    border-radius: 12px;
+    background: #0f172a;
+    color: #cbd5e1;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre;
+    overflow: auto;
+    resize: vertical;
+}
+
+.quba-toast {
+    display: none;
+    margin-left: 4px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--quba-success);
+}
+
+.quba-notice {
+    margin: 0 0 16px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid #f0d48a;
+    background: var(--quba-warning-soft);
+    color: #92400e;
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.quba-sector-table-wrap {
+    overflow: auto;
+    border: 1px solid var(--quba-border);
+    border-radius: 12px;
+}
+
+.quba-sector-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+}
+
+.quba-sector-table th,
+.quba-sector-table td {
+    padding: 16px;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid var(--quba-border);
+}
+
+.quba-sector-table th {
+    background: #f8fafc;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--quba-muted);
+}
+
+.quba-sector-table tr:last-child td {
+    border-bottom: none;
+}
+
+.quba-sector-table tbody tr:hover td {
+    background: #fbfcfe;
+}
+
+.quba-sector-name {
+    display: block;
+    font-size: 14px;
+    font-weight: 650;
+    color: var(--quba-text);
+    line-height: 1.35;
+}
+
+.quba-sector-code {
+    display: inline-flex;
+    margin-top: 8px;
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: var(--quba-accent-soft);
+    color: var(--quba-accent);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.quba-sector-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.quba-sector-preview {
+    min-height: 72px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 10px;
+    border: 1px dashed var(--quba-border-strong);
+    border-radius: 12px;
+    background: #f8fafc;
+}
+
+.quba-sector-preview img {
+    display: block;
+    max-width: 140px;
+    max-height: 84px;
+    height: auto;
+    border-radius: 8px;
+    border: 1px solid var(--quba-border);
+    background: #fff;
+}
+
+.quba-sector-picker[data-field="icon"] .quba-sector-preview img {
+    max-width: 52px;
+    max-height: 52px;
+    border-radius: 50%;
+}
+
+.quba-sector-preview-empty {
+    color: var(--quba-muted);
+    font-size: 12px;
+    font-style: normal;
+}
+
+.quba-sector-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.quba-card-footer {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 22px 22px;
+}
+
+@media (max-width: 960px) {
+    .quba-admin {
+        margin-right: 10px;
+    }
+
+    .quba-admin-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .quba-admin-hero {
+        flex-direction: column;
+        padding: 22px;
+    }
+}

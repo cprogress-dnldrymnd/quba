@@ -3,7 +3,7 @@
 /**
  * Plugin Name: Quba System Integration
  * Description: Integrates QUBA SOAP API, synchronizes units/qualifications via batched processes, and provides custom native templates & meta boxes. Includes persistent background sync logging.
- * Version: 2.8.6
+ * Version: 2.8.8
  * Author: Digitally Disruptive
  * Author URI: https://digitallydisruptive.co.uk/
  * Text Domain: quba-integration
@@ -978,7 +978,8 @@ class Quba_Admin
         if ($hook !== 'tools_page_quba-sync') return;
 
         wp_enqueue_media();
-        wp_enqueue_script('quba-admin-sync', plugin_dir_url(__FILE__) . 'assets/js/admin-sync.js', ['jquery'], '2.8.6', true);
+        wp_enqueue_style('quba-admin-css', plugin_dir_url(__FILE__) . 'assets/css/admin.css', [], '2.8.8', 'all');
+        wp_enqueue_script('quba-admin-sync', plugin_dir_url(__FILE__) . 'assets/js/admin-sync.js', ['jquery'], '2.8.8', true);
         wp_localize_script('quba-admin-sync', 'qubaAdminAjax', [
             'nonce' => wp_create_nonce('quba_admin_nonce')
         ]);
@@ -1064,176 +1065,242 @@ class Quba_Admin
         }
         $sectors = Quba_API::get_qca_sectors();
         $sectors_available = !($sectors instanceof Exception) && !empty($sectors);
+        $root_sector_count = 0;
+        if ($sectors_available) {
+            foreach ($sectors as $sector_count_item) {
+                $count_code = trim((string) $sector_count_item->Code);
+                if ($count_code !== '' && preg_match('/^\d+$/', $count_code)) {
+                    $root_sector_count++;
+                }
+            }
+        }
 
 ?>
-        <div class="wrap">
-            <h1>QUBA Manual Synchronization</h1>
-            <p>Use this tool to manually trigger a full synchronization of Qualifications and Units from the QUBA SOAP API.</p>
-
-            <div style="background: #fff; padding: 20px; border: 1px solid #ccd0d4; max-width: 600px; margin-top: 20px; display: inline-block; vertical-align: top;">
-
-                <div style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-left: 4px solid #2271b1;">
-                    <label style="display: block; font-size: 14px; margin-bottom: 10px;"><strong>1. Select Data Entity to Synchronize:</strong></label>
-                    <label style="display: block; margin-bottom: 8px;"><input type="radio" name="quba_sync_type" value="both" checked> Both (Qualifications & Units)</label>
-                    <label style="display: block; margin-bottom: 8px;"><input type="radio" name="quba_sync_type" value="qualifications"> Qualifications Only</label>
-                    <label style="display: block; margin-bottom: 15px;"><input type="radio" name="quba_sync_type" value="units"> Units Only</label>
-
-                    <hr style="border-top: 1px solid #ddd; margin-bottom: 15px;">
-
-                    <label style="display: block; font-size: 14px; margin-bottom: 10px;"><strong>2. Optional: Sync Specific Target ID(s)</strong></label>
-                    <input type="text" id="quba_sync_specific_id" placeholder="e.g. 1234, 5678, 9101" style="width: 100%; max-width: 300px;">
-                    <p class="description" style="font-size: 12px; color: #666; margin-top: 5px;">Leave blank to run a full synchronization. If you enter comma-separated IDs here, the tool will instantly bypass the extraction loops and sync exclusively those items.</p>
-                    <label style="display: block; margin-top: 10px;">
-                        <input type="checkbox" id="quba_specific_id_fallback" value="1">
-                        If specific ID returns no rows, retry once with fallback lookup
-                    </label>
+        <div class="wrap quba-admin">
+            <div class="quba-admin-hero">
+                <div>
+                    <h1>QUBA Sync</h1>
+                    <p>Run manual synchronizations, manage cron notifications, and configure sector card images used across the qualifications listing grid.</p>
                 </div>
-
-                <button id="quba-start-sync" class="button button-primary button-large">Start Manual Sync</button>
-
-                <div style="margin-top: 20px;">
-                    <strong>Status:</strong> <span id="quba-sync-status">Idle. Ready to sync.</span>
+                <div class="quba-admin-hero-badge">
+                    <?= $sectors_available ? esc_html($root_sector_count . ' root sectors') : 'Sectors offline' ?>
                 </div>
-
-
-                <div style="width: 100%; background-color: #f0f0f1; border-radius: 3px; margin-top: 15px; height: 30px; border: 1px solid #c3c4c7; overflow: hidden;">
-                    <div id="quba-sync-progress-bar" style="width: 0%; height: 100%; background-color: #2271b1; transition: width 0.3s ease; text-align: center; color: white; line-height: 30px; font-weight: bold;">0%</div>
-                </div>
-
-                <div id="quba-debug-panel" style="display:none; margin-top: 20px; padding: 15px; background: #fff; border: 1px solid #ccd0d4; border-left: 4px solid #dba617;">
-                    <h3 style="margin-top:0; font-size: 14px;">Diagnostic Request Data</h3>
-                    <p style="font-size: 12px; color: #666; margin-top: 0; margin-bottom: 10px;">Displays the exact payload sent to the Quartz SOAP API and the raw response status.</p>
-                    <pre id="quba-debug-output" style="font-family: monospace; font-size: 11px; white-space: pre-wrap; word-wrap: break-word; background: #f0f0f1; padding: 10px; max-height: 500px; overflow-y: auto; border: 1px solid #c3c4c7; margin: 0;"></pre>
-                </div>
-
             </div>
 
-            <div style="background: #fff; padding: 20px; border: 1px solid #ccd0d4; max-width: 600px; margin-top: 20px; display: inline-block; vertical-align: top; margin-left: 20px;">
-                <div style="margin-bottom: 15px;">
-                    <h2 style="margin-top:0; font-size: 16px;">Cron Notification Settings</h2>
-                    <p class="description" style="margin-top: 0;">Specify an email address below to receive Start and Finish reports when automated background synchronization sequences execute (e.g. daily updates).</p>
-                </div>
-
-                <div style="margin-bottom: 15px;">
-                    <label for="quba_notification_email" style="display: block; font-size: 14px; margin-bottom: 5px;"><strong>Recipient Email Address:</strong></label>
-                    <input type="email" id="quba_notification_email" value="<?= esc_attr($current_email) ?>" placeholder="e.g. admin@domain.com" style="width: 100%; max-width: 400px;">
-                </div>
-
-                <hr style="border-top: 1px solid #ddd; margin: 15px 0;">
-
-                <div style="margin-bottom: 15px;">
-                    <h2 style="margin-top:0; font-size: 16px;">Frontend Display Settings</h2>
-                    <label style="display: block; font-size: 14px;">
-                        <input type="checkbox" id="quba_hide_debug_info" value="1" <?php checked($hide_debug_info); ?>>
-                        <strong>Hide debug info on single Unit/Qualification pages</strong>
-                    </label>
-                    <p class="description" style="font-size: 12px; color: #666; margin-top: 5px;">The debug information block is only ever visible to logged-in administrators. Tick this box to hide it from administrators too.</p>
-                </div>
-
-                <button id="quba-save-settings" class="button button-secondary quba-save-settings-btn">Save Settings</button>
-                <span class="quba-settings-status-shared" style="margin-left: 10px; font-weight: 500; color: #00a32a; display: none;">Saved!</span>
-            </div>
-
-            <div style="background: #fff; padding: 20px; border: 1px solid #ccd0d4; max-width: 600px; margin-top: 20px; display: inline-block; vertical-align: top; margin-left: 20px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                    <h2 style="margin:0;">Live Sync Log</h2>
-                    <button class="button" onclick="clearQubaLogs(event)">Clear Log</button>
-                </div>
-                <p class="description" style="margin-top: 0;">Logs record created and updated records from both Manual Syncs and Background Cron tasks.</p>
-                <textarea id="quba-log-viewer" readonly style="width: 100%; height: 350px; font-family: monospace; font-size: 12px; background: #f0f0f1; color: #3c434a; white-space: pre; overflow-wrap: normal; overflow-x: scroll; border: 1px solid #c3c4c7; padding: 10px;"><?= $log_content ?></textarea>
-                <script>
-                    // Auto-scroll to bottom of log viewer
-                    var logViewer = document.getElementById('quba-log-viewer');
-                    logViewer.scrollTop = logViewer.scrollHeight;
-
-                    function clearQubaLogs(e) {
-                        e.preventDefault();
-                        if (confirm('Are you sure you want to delete the sync log history?')) {
-                            jQuery.post(ajaxurl, {
-                                action: 'quba_clear_logs',
-                                nonce: qubaAdminAjax.nonce
-                            }, function(res) {
-                                document.getElementById('quba-log-viewer').value = 'Log cleared.';
-                            });
-                        }
-                    }
-                </script>
-            </div>
-
-            <div id="quba-sector-media-panel" style="background: #fff; padding: 20px; border: 1px solid #ccd0d4; margin-top: 20px; clear: both; max-width: 1100px;">
-                <h2 style="margin-top: 0;">Sector Card Media</h2>
-                <p class="description" style="margin-top: 0;">Assign a listing-card image and badge icon for each top-level QCA sector (e.g. Code 1). Subsectors such as 1.2 and 1.3 automatically inherit that parent’s media on the listing cards. Click <strong>Save Settings</strong> after choosing files.</p>
-
-                <?php if (!$sectors_available) : ?>
-                    <div class="notice notice-warning inline" style="margin: 10px 0 0;">
-                        <p>QCA sectors could not be loaded from the API. Existing mappings were left unchanged. Try again when the API is available.</p>
+            <div class="quba-admin-grid">
+                <section class="quba-card">
+                    <div class="quba-card-header">
+                        <div>
+                            <h2>Manual synchronization</h2>
+                            <p>Pull the latest qualifications and units from the QUBA SOAP API.</p>
+                        </div>
                     </div>
-                <?php else : ?>
-                    <table class="widefat striped" style="margin-top: 15px;">
-                        <thead>
-                            <tr>
-                                <th style="width: 32%;">Sector</th>
-                                <th style="width: 34%;">Card Image</th>
-                                <th style="width: 34%;">Badge Icon</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($sectors as $sector) :
-                                $code = trim((string) $sector->Code);
-                                // Only configure root sectors (e.g. "15"); decimal codes inherit via prefix match
-                                if ($code === '' || !preg_match('/^\d+$/', $code)) {
-                                    continue;
-                                }
-                                $classification = (string) $sector->Classification;
-                                $map = isset($sector_media[$code]) && is_array($sector_media[$code]) ? $sector_media[$code] : [];
-                                $image_id = isset($map['image_id']) ? absint($map['image_id']) : 0;
-                                $icon_id = isset($map['icon_id']) ? absint($map['icon_id']) : 0;
-                                $image_url = $image_id ? wp_get_attachment_image_url($image_id, 'medium') : '';
-                                $icon_url = $icon_id ? wp_get_attachment_image_url($icon_id, 'thumbnail') : '';
-                            ?>
-                                <tr class="quba-sector-media-row" data-code="<?= esc_attr($code) ?>" data-label="<?= esc_attr($classification) ?>">
-                                    <td>
-                                        <strong><?= esc_html($classification) ?></strong>
-                                        <div style="color:#646970; font-size:12px; margin-top:4px;">Code: <?= esc_html($code) ?></div>
-                                    </td>
-                                    <td>
-                                        <div class="quba-sector-picker" data-field="image">
-                                            <input type="hidden" class="quba-sector-image-id" value="<?= esc_attr($image_id) ?>">
-                                            <div class="quba-sector-preview" style="margin-bottom:8px; min-height:40px;">
-                                                <?php if ($image_url) : ?>
-                                                    <img src="<?= esc_url($image_url) ?>" alt="" style="max-width:120px; max-height:80px; height:auto; display:block; border:1px solid #c3c4c7;">
-                                                <?php else : ?>
-                                                    <em style="color:#646970;">No image selected</em>
-                                                <?php endif; ?>
-                                            </div>
-                                            <button type="button" class="button quba-sector-select">Select Image</button>
-                                            <button type="button" class="button quba-sector-clear" <?= $image_id ? '' : 'style="display:none;"' ?>>Clear</button>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <div class="quba-sector-picker" data-field="icon">
-                                            <input type="hidden" class="quba-sector-icon-id" value="<?= esc_attr($icon_id) ?>">
-                                            <div class="quba-sector-preview" style="margin-bottom:8px; min-height:40px;">
-                                                <?php if ($icon_url) : ?>
-                                                    <img src="<?= esc_url($icon_url) ?>" alt="" style="max-width:48px; max-height:48px; height:auto; display:block; border:1px solid #c3c4c7; border-radius:50%;">
-                                                <?php else : ?>
-                                                    <em style="color:#646970;">No icon selected</em>
-                                                <?php endif; ?>
-                                            </div>
-                                            <button type="button" class="button quba-sector-select">Select Icon</button>
-                                            <button type="button" class="button quba-sector-clear" <?= $icon_id ? '' : 'style="display:none;"' ?>>Clear</button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                    <p style="margin-top: 15px;">
-                        <button type="button" class="button button-primary quba-save-settings-btn">Save Settings</button>
-                        <span class="quba-settings-status-shared" style="margin-left: 10px; font-weight: 500; color: #00a32a; display: none;">Saved!</span>
-                    </p>
-                <?php endif; ?>
+                    <div class="quba-card-body">
+                        <div class="quba-section">
+                            <span class="quba-section-label">1. Data to sync</span>
+                            <div class="quba-choice-grid">
+                                <label class="quba-choice">
+                                    <input type="radio" name="quba_sync_type" value="both" checked>
+                                    <span class="quba-choice-ui">
+                                        <span class="quba-choice-copy">
+                                            <strong>Both</strong>
+                                            <span>Qualifications and units</span>
+                                        </span>
+                                    </span>
+                                </label>
+                                <label class="quba-choice">
+                                    <input type="radio" name="quba_sync_type" value="qualifications">
+                                    <span class="quba-choice-ui">
+                                        <span class="quba-choice-copy">
+                                            <strong>Qualifications only</strong>
+                                            <span>Skip unit synchronization</span>
+                                        </span>
+                                    </span>
+                                </label>
+                                <label class="quba-choice">
+                                    <input type="radio" name="quba_sync_type" value="units">
+                                    <span class="quba-choice-ui">
+                                        <span class="quba-choice-copy">
+                                            <strong>Units only</strong>
+                                            <span>Skip qualification synchronization</span>
+                                        </span>
+                                    </span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="quba-section">
+                            <span class="quba-section-label">2. Optional target IDs</span>
+                            <div class="quba-field">
+                                <label for="quba_sync_specific_id">Specific ID(s)</label>
+                                <input type="text" class="quba-input" id="quba_sync_specific_id" placeholder="e.g. 1234, 5678, 9101">
+                                <p class="quba-help" style="margin-top:8px;">Leave blank for a full sync. Comma-separated IDs sync only those records.</p>
+                            </div>
+                            <label class="quba-check">
+                                <input type="checkbox" id="quba_specific_id_fallback" value="1">
+                                <span>If a specific ID returns no rows, retry once with fallback lookup</span>
+                            </label>
+                        </div>
+
+                        <div class="quba-actions">
+                            <button type="button" id="quba-start-sync" class="quba-btn quba-btn-primary">Start manual sync</button>
+                            <span class="quba-status-pill" id="quba-sync-status-pill">
+                                <span id="quba-sync-status">Idle. Ready to sync.</span>
+                            </span>
+                        </div>
+
+                        <div class="quba-progress" aria-hidden="true">
+                            <div id="quba-sync-progress-bar" class="quba-progress-bar">0%</div>
+                        </div>
+                        <div class="quba-progress-meta">
+                            <span>Progress</span>
+                            <span id="quba-sync-progress-label">0%</span>
+                        </div>
+
+                        <div id="quba-debug-panel" class="quba-debug-panel">
+                            <h3>Diagnostic request data</h3>
+                            <p>Exact payload sent to the Quartz SOAP API and the raw response status.</p>
+                            <pre id="quba-debug-output"></pre>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="quba-card">
+                    <div class="quba-card-header">
+                        <div>
+                            <h2>Settings</h2>
+                            <p>Notifications and frontend display preferences.</p>
+                        </div>
+                    </div>
+                    <div class="quba-card-body">
+                        <div class="quba-section">
+                            <span class="quba-section-label">Cron notifications</span>
+                            <div class="quba-field">
+                                <label for="quba_notification_email">Recipient email address</label>
+                                <input type="email" class="quba-input" id="quba_notification_email" value="<?= esc_attr($current_email) ?>" placeholder="e.g. admin@domain.com">
+                                <p class="quba-help" style="margin-top:8px;">Receives start and finish reports for automated daily syncs.</p>
+                            </div>
+                        </div>
+
+                        <div class="quba-section">
+                            <span class="quba-section-label">Frontend display</span>
+                            <label class="quba-check">
+                                <input type="checkbox" id="quba_hide_debug_info" value="1" <?php checked($hide_debug_info); ?>>
+                                <span>Hide debug info on single Unit/Qualification pages<br><small style="color:#64748b;">Debug info is only visible to logged-in administrators unless this is enabled.</small></span>
+                            </label>
+                        </div>
+
+                        <div class="quba-actions">
+                            <button type="button" id="quba-save-settings" class="quba-btn quba-btn-secondary quba-save-settings-btn">Save settings</button>
+                            <span class="quba-settings-status-shared quba-toast">Saved!</span>
+                        </div>
+                    </div>
+                </section>
             </div>
+
+            <section class="quba-card" style="margin-bottom:20px;">
+                <div class="quba-card-header">
+                    <div>
+                        <h2>Live sync log</h2>
+                        <p>Created and updated records from manual syncs and background cron tasks.</p>
+                    </div>
+                    <button type="button" id="quba-clear-logs" class="quba-btn quba-btn-ghost">Clear log</button>
+                </div>
+                <div class="quba-card-body">
+                    <textarea id="quba-log-viewer" class="quba-log-viewer" readonly><?= $log_content ?></textarea>
+                </div>
+            </section>
+
+            <section id="quba-sector-media-panel" class="quba-card">
+                <div class="quba-card-header">
+                    <div>
+                        <h2>Sector card media</h2>
+                        <p>Assign a listing-card image and badge icon for each top-level QCA sector. Subsectors such as 1.2 inherit the parent’s media automatically.</p>
+                    </div>
+                </div>
+                <div class="quba-card-body">
+                    <?php if (!$sectors_available) : ?>
+                        <div class="quba-notice">QCA sectors could not be loaded from the API. Existing mappings were left unchanged. Try again when the API is available.</div>
+                    <?php else : ?>
+                        <div class="quba-sector-table-wrap">
+                            <table class="quba-sector-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width:32%;">Sector</th>
+                                        <th style="width:34%;">Card image</th>
+                                        <th style="width:34%;">Badge icon</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($sectors as $sector) :
+                                        $code = trim((string) $sector->Code);
+                                        if ($code === '' || !preg_match('/^\d+$/', $code)) {
+                                            continue;
+                                        }
+                                        $classification = (string) $sector->Classification;
+                                        $map = isset($sector_media[$code]) && is_array($sector_media[$code]) ? $sector_media[$code] : [];
+                                        $image_id = isset($map['image_id']) ? absint($map['image_id']) : 0;
+                                        $icon_id = isset($map['icon_id']) ? absint($map['icon_id']) : 0;
+                                        $image_url = $image_id ? wp_get_attachment_image_url($image_id, 'medium') : '';
+                                        $icon_url = $icon_id ? wp_get_attachment_image_url($icon_id, 'thumbnail') : '';
+                                        if (!$image_url && $image_id) {
+                                            $image_url = wp_get_attachment_url($image_id);
+                                        }
+                                        if (!$icon_url && $icon_id) {
+                                            $icon_url = wp_get_attachment_url($icon_id);
+                                        }
+                                    ?>
+                                        <tr class="quba-sector-media-row" data-code="<?= esc_attr($code) ?>" data-label="<?= esc_attr($classification) ?>">
+                                            <td>
+                                                <span class="quba-sector-name"><?= esc_html($classification) ?></span>
+                                                <span class="quba-sector-code">Code <?= esc_html($code) ?></span>
+                                            </td>
+                                            <td>
+                                                <div class="quba-sector-picker" data-field="image">
+                                                    <input type="hidden" class="quba-sector-image-id" value="<?= esc_attr($image_id) ?>">
+                                                    <div class="quba-sector-preview">
+                                                        <?php if ($image_url) : ?>
+                                                            <img src="<?= esc_url($image_url) ?>" alt="">
+                                                        <?php else : ?>
+                                                            <span class="quba-sector-preview-empty">No image selected</span>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                    <div class="quba-sector-actions">
+                                                        <button type="button" class="quba-btn quba-btn-secondary quba-sector-select">Select image</button>
+                                                        <button type="button" class="quba-btn quba-btn-ghost quba-sector-clear" <?= $image_id ? '' : 'style="display:none;"' ?>>Clear</button>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <div class="quba-sector-picker" data-field="icon">
+                                                    <input type="hidden" class="quba-sector-icon-id" value="<?= esc_attr($icon_id) ?>">
+                                                    <div class="quba-sector-preview">
+                                                        <?php if ($icon_url) : ?>
+                                                            <img src="<?= esc_url($icon_url) ?>" alt="">
+                                                        <?php else : ?>
+                                                            <span class="quba-sector-preview-empty">No icon selected</span>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                    <div class="quba-sector-actions">
+                                                        <button type="button" class="quba-btn quba-btn-secondary quba-sector-select">Select icon</button>
+                                                        <button type="button" class="quba-btn quba-btn-ghost quba-sector-clear" <?= $icon_id ? '' : 'style="display:none;"' ?>>Clear</button>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php endif; ?>
+                </div>
+                <?php if ($sectors_available) : ?>
+                    <div class="quba-card-footer">
+                        <button type="button" class="quba-btn quba-btn-primary quba-save-settings-btn">Save settings</button>
+                        <span class="quba-settings-status-shared quba-toast">Saved!</span>
+                    </div>
+                <?php endif; ?>
+            </section>
         </div>
     <?php
     }
@@ -2083,8 +2150,8 @@ class Quba_Controllers
             is_post_type_archive('qualifications') || is_post_type_archive('units') ||
             is_singular('qualifications') || is_singular('units') || is_tax('qualifications_cat')
         ) {
-            wp_enqueue_style('quba-main-css', plugin_dir_url(__FILE__) . 'assets/css/main.css', [], '2.8.6', 'all');
-            wp_enqueue_script('quba-main-js', plugin_dir_url(__FILE__) . 'assets/js/main.js', ['jquery'], '2.8.6', true);
+            wp_enqueue_style('quba-main-css', plugin_dir_url(__FILE__) . 'assets/css/main.css', [], '2.8.8', 'all');
+            wp_enqueue_script('quba-main-js', plugin_dir_url(__FILE__) . 'assets/js/main.js', ['jquery'], '2.8.8', true);
             wp_localize_script('quba-main-js', 'qubaAjaxObj', [
                 'ajaxUrl' => admin_url('admin-ajax.php'),
                 'nonce'   => wp_create_nonce('quba_ajax_nonce')
